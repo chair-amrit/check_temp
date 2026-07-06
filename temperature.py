@@ -17,10 +17,22 @@ if not -180 <= lon <= 180:
 
 url=f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m"
 
-response=requests.get(url)
-data=response.json()
+try:
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+except requests.exceptions.RequestException:
+    print("Could not fetch weather data. Please check your internet connection and try again.")
+    exit()
+except ValueError:
+    print("Could not read weather data from the server.")
+    exit()
 
-temperature=data["current"]["temperature_2m"]
-unit=data["current_units"]["temperature_2m"]
+try:
+    temperature = data["current"]["temperature_2m"]
+    unit = data["current_units"]["temperature_2m"]
+except KeyError:
+    print("Weather data is missing temperature information.")
+    exit()
 
 print(f"current temperature:{temperature} {unit}")

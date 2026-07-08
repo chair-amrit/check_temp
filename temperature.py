@@ -1,18 +1,38 @@
 import requests
 
+city = input("Enter city name:").strip()
+
+if not city:
+    print("City name cannot be empty.")
+    exit()
+
+geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
+geocoding_params = {
+    "name": city,
+    "count": 1,
+    "language": "en",
+    "format": "json",
+}
+
 try:
-    lat = float(input("Enter the latitude:"))
-    lon = float(input("Enter the longitude:"))
+    response = requests.get(geocoding_url, params=geocoding_params, timeout=10)
+    response.raise_for_status()
+    location_data = response.json()
+except requests.exceptions.RequestException:
+    print("Could not find the city. Please check your internet connection and try again.")
+    exit()
 except ValueError:
-    print("Invalid input. Latitude and longitude must be numbers.")
+    print("Could not read city data from the server.")
     exit()
 
-if not -90 <= lat <= 90:
-    print("Invalid latitude. Latitude must be between -90 and 90.")
-    exit()
-
-if not -180 <= lon <= 180:
-    print("Invalid longitude. Longitude must be between -180 and 180.")
+try:
+    location = location_data["results"][0]
+    lat = location["latitude"]
+    lon = location["longitude"]
+    location_name = location["name"]
+    country = location["country"]
+except (KeyError, IndexError):
+    print("City not found. Please try another city name.")
     exit()
 
 weather_fields = [
@@ -56,7 +76,8 @@ except KeyError:
 
 print("\nCurrent Weather Report")
 print("----------------------")
-print(f"Location      : {lat}, {lon}")
+print(f"Location      : {location_name}, {country}")
+print(f"Coordinates   : {lat}, {lon}")
 print(f"Temperature   : {temperature} {temperature_unit}")
 print(f"Feels like    : {feels_like} {feels_like_unit}")
 print(f"Humidity      : {humidity} {humidity_unit}")

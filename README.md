@@ -2,21 +2,22 @@
 
 A simple Python command-line project created to understand the basics of working with APIs.
 
-This project takes latitude and longitude as input, sends a request to the Open-Meteo Weather API, and displays the current weather information in a clean format.
+This project takes a city name as input, finds its coordinates using geocoding, sends a request to the Open-Meteo Weather API, and displays the current weather information in a clean format.
 
 I made this as a beginner-friendly B.Tech student project to practice:
 
 - Taking user input in Python
 - Validating input data
 - Calling an external API
+- Using geocoding to convert a city name into coordinates
 - Reading JSON responses
 - Handling basic errors
 - Displaying useful output in the terminal
 
 ## Features
 
-- Accepts latitude and longitude from the user
-- Validates latitude and longitude values
+- Accepts a city name from the user
+- Finds the latitude and longitude for the city
 - Fetches live weather data using the Open-Meteo API
 - Shows current weather details:
   - Temperature
@@ -67,14 +68,14 @@ py temperature.py
 ## Example
 
 ```text
-Enter the latitude:13.08
-Enter the longitude:80.27
+Enter city name:Chennai
 
 Current Weather Report
 ----------------------
-Location      : 13.08, 80.27
-Temperature   : 31.4 °C
-Feels like    : 35.2 °C
+Location      : Chennai, India
+Coordinates   : 13.0878, 80.2785
+Temperature   : 31.4 deg C
+Feels like    : 35.2 deg C
 Humidity      : 70 %
 Precipitation : 0.0 mm
 Wind speed    : 10.5 km/h
@@ -82,7 +83,7 @@ Wind speed    : 10.5 km/h
 
 ## API Used
 
-This project uses the free Open-Meteo API:
+This project uses the free Open-Meteo Forecast API and Geocoding API:
 
 https://open-meteo.com/
 
@@ -90,13 +91,12 @@ No API key is required for basic usage.
 
 ## What I Learned
 
-Through this project, I learned how a Python program can communicate with an external service using an API. I also understood how to work with JSON data, validate user input, and handle simple errors while building a real-world mini project.
+Through this project, I learned how a Python program can communicate with external services using APIs. I also understood how to work with JSON data, convert city names into coordinates, validate user input, and handle simple errors while building a real-world mini project.
 
 ## Future Improvements
 
 Some possible improvements for this project are:
 
-- Search weather by city name
 - Show 7-day forecast
 - Add command-line arguments
 - Save weather reports to a file

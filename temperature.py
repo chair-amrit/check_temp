@@ -43,7 +43,16 @@ weather_fields = [
     "wind_speed_10m",
 ]
 current_weather = ",".join(weather_fields)
-url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current={current_weather}"
+daily_weather = "temperature_2m_max,temperature_2m_min"
+url = (
+    "https://api.open-meteo.com/v1/forecast"
+    f"?latitude={lat}"
+    f"&longitude={lon}"
+    f"&current={current_weather}"
+    f"&daily={daily_weather}"
+    "&forecast_days=7"
+    "&timezone=auto"
+)
 
 try:
     response = requests.get(url, timeout=10)
@@ -70,8 +79,20 @@ try:
     precipitation_unit = units["precipitation"]
     wind_speed = current["wind_speed_10m"]
     wind_speed_unit = units["wind_speed_10m"]
+
+    daily = data["daily"]
+    daily_units = data["daily_units"]
+    forecast_dates = daily["time"]
+    max_temperatures = daily["temperature_2m_max"]
+    min_temperatures = daily["temperature_2m_min"]
+    max_temperature_unit = daily_units["temperature_2m_max"]
+    min_temperature_unit = daily_units["temperature_2m_min"]
 except KeyError:
     print("Weather data is missing some information.")
+    exit()
+
+if not forecast_dates or not max_temperatures or not min_temperatures:
+    print("Weather data is missing forecast information.")
     exit()
 
 print("\nCurrent Weather Report")
@@ -83,3 +104,17 @@ print(f"Feels like    : {feels_like} {feels_like_unit}")
 print(f"Humidity      : {humidity} {humidity_unit}")
 print(f"Precipitation : {precipitation} {precipitation_unit}")
 print(f"Wind speed    : {wind_speed} {wind_speed_unit}")
+
+print("\nToday's Forecast")
+print("----------------")
+print(f"High          : {max_temperatures[0]} {max_temperature_unit}")
+print(f"Low           : {min_temperatures[0]} {min_temperature_unit}")
+
+print("\n7-Day Forecast")
+print("--------------")
+for index in range(min(len(forecast_dates), len(min_temperatures), len(max_temperatures))):
+    print(
+        f"{forecast_dates[index]} : "
+        f"{min_temperatures[index]} {min_temperature_unit} - "
+        f"{max_temperatures[index]} {max_temperature_unit}"
+    )

@@ -25,6 +25,8 @@ I made this as a beginner-friendly B.Tech student project to practice:
   - Humidity
   - Precipitation
   - Wind speed
+- Shows today's high and low temperature
+- Shows a 7-day temperature forecast
 - Handles common errors like invalid input, network issues, and missing API data
 
 ## Technologies Used
@@ -79,6 +81,17 @@ Feels like    : 35.2 deg C
 Humidity      : 70 %
 Precipitation : 0.0 mm
 Wind speed    : 10.5 km/h
+
+Today's Forecast
+----------------
+High          : 33.1 deg C
+Low           : 27.4 deg C
+
+7-Day Forecast
+--------------
+2026-07-08 : 27.4 deg C - 33.1 deg C
+2026-07-09 : 27.0 deg C - 32.8 deg C
+2026-07-10 : 26.8 deg C - 32.5 deg C
 ```
 
 ## API Used
@@ -97,7 +110,6 @@ Through this project, I learned how a Python program can communicate with extern
 
 Some possible improvements for this project are:
 
-- Show 7-day forecast
 - Add command-line arguments
 - Save weather reports to a file
 - Convert this into a small Flask or FastAPI web API

@@ -89,46 +89,36 @@ def get_forecast(data):
 
 
 def print_weather_report(location, current_weather, forecast):
-    print("\nCurrent Weather Report")
-    print("----------------------")
+    print("\nWeather Report")
+    print("=" * 40)
     print(f"Location      : {location['name']}, {location['country']}")
     print(f"Coordinates   : {location['latitude']}, {location['longitude']}")
+    print("-" * 40)
+    print(f"Temperature   : {current_weather['temperature']} {current_weather['temperature_unit']}")
+    print(f"Feels like    : {current_weather['feels_like']} {current_weather['feels_like_unit']}")
+    print(f"Wind          : {current_weather['wind_speed']} {current_weather['wind_speed_unit']}")
+    print(f"Humidity      : {current_weather['humidity']}{current_weather['humidity_unit']}")
+    print(f"Precipitation : {current_weather['precipitation']} {current_weather['precipitation_unit']}")
+    print("-" * 40)
     print(
-        f"Temperature   : {current_weather['temperature']} "
-        f"{current_weather['temperature_unit']}"
+        f"Today         : {forecast['min_temperatures'][0]} "
+        f"{forecast['min_temperature_unit']} - "
+        f"{forecast['max_temperatures'][0]} {forecast['max_temperature_unit']}"
     )
-    print(
-        f"Feels like    : {current_weather['feels_like']} "
-        f"{current_weather['feels_like_unit']}"
-    )
-    print(f"Humidity      : {current_weather['humidity']} {current_weather['humidity_unit']}")
-    print(
-        f"Precipitation : {current_weather['precipitation']} "
-        f"{current_weather['precipitation_unit']}"
-    )
-    print(
-        f"Wind speed    : {current_weather['wind_speed']} "
-        f"{current_weather['wind_speed_unit']}"
-    )
-
-    print("\nToday's Forecast")
-    print("----------------")
-    print(f"High          : {forecast['max_temperatures'][0]} {forecast['max_temperature_unit']}")
-    print(f"Low           : {forecast['min_temperatures'][0]} {forecast['min_temperature_unit']}")
 
     print("\n7-Day Forecast")
-    print("--------------")
+    print("-" * 40)
+    print(f"{'Date':<12} {'Low':>10} {'High':>10}")
+    print("-" * 40)
     forecast_days = min(
         len(forecast["dates"]),
         len(forecast["min_temperatures"]),
         len(forecast["max_temperatures"]),
     )
     for index in range(forecast_days):
-        print(
-            f"{forecast['dates'][index]} : "
-            f"{forecast['min_temperatures'][index]} {forecast['min_temperature_unit']} - "
-            f"{forecast['max_temperatures'][index]} {forecast['max_temperature_unit']}"
-        )
+        low = f"{forecast['min_temperatures'][index]} {forecast['min_temperature_unit']}"
+        high = f"{forecast['max_temperatures'][index]} {forecast['max_temperature_unit']}"
+        print(f"{forecast['dates'][index]:<12} {low:>10} {high:>10}")
 
 
 def main():

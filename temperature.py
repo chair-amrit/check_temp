@@ -1,120 +1,176 @@
 import requests
 
-city = input("Enter city name:").strip()
 
-if not city:
-    print("City name cannot be empty.")
-    exit()
+def get_location(city):
+    geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
+    geocoding_params = {
+        "name": city,
+        "count": 1,
+        "language": "en",
+        "format": "json",
+    }
 
-geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
-geocoding_params = {
-    "name": city,
-    "count": 1,
-    "language": "en",
-    "format": "json",
-}
-
-try:
     response = requests.get(geocoding_url, params=geocoding_params, timeout=10)
     response.raise_for_status()
     location_data = response.json()
-except requests.exceptions.RequestException:
-    print("Could not find the city. Please check your internet connection and try again.")
-    exit()
-except ValueError:
-    print("Could not read city data from the server.")
-    exit()
 
-try:
     location = location_data["results"][0]
-    lat = location["latitude"]
-    lon = location["longitude"]
-    location_name = location["name"]
-    country = location["country"]
-except (KeyError, IndexError):
-    print("City not found. Please try another city name.")
-    exit()
+    return {
+        "name": location["name"],
+        "country": location["country"],
+        "latitude": location["latitude"],
+        "longitude": location["longitude"],
+    }
 
-weather_fields = [
-    "temperature_2m",
-    "apparent_temperature",
-    "relative_humidity_2m",
-    "precipitation",
-    "wind_speed_10m",
-]
-current_weather = ",".join(weather_fields)
-daily_weather = "temperature_2m_max,temperature_2m_min"
-url = (
-    "https://api.open-meteo.com/v1/forecast"
-    f"?latitude={lat}"
-    f"&longitude={lon}"
-    f"&current={current_weather}"
-    f"&daily={daily_weather}"
-    "&forecast_days=7"
-    "&timezone=auto"
-)
 
-try:
+def get_weather_data(lat, lon):
+    weather_fields = [
+        "temperature_2m",
+        "apparent_temperature",
+        "relative_humidity_2m",
+        "precipitation",
+        "wind_speed_10m",
+    ]
+    current_weather = ",".join(weather_fields)
+    daily_weather = "temperature_2m_max,temperature_2m_min"
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}"
+        f"&longitude={lon}"
+        f"&current={current_weather}"
+        f"&daily={daily_weather}"
+        "&forecast_days=7"
+        "&timezone=auto"
+    )
+
     response = requests.get(url, timeout=10)
     response.raise_for_status()
-    data = response.json()
-except requests.exceptions.RequestException:
-    print("Could not fetch weather data. Please check your internet connection and try again.")
-    exit()
-except ValueError:
-    print("Could not read weather data from the server.")
-    exit()
+    return response.json()
 
-try:
+
+def get_current_weather(data):
     current = data["current"]
     units = data["current_units"]
 
-    temperature = current["temperature_2m"]
-    temperature_unit = units["temperature_2m"]
-    feels_like = current["apparent_temperature"]
-    feels_like_unit = units["apparent_temperature"]
-    humidity = current["relative_humidity_2m"]
-    humidity_unit = units["relative_humidity_2m"]
-    precipitation = current["precipitation"]
-    precipitation_unit = units["precipitation"]
-    wind_speed = current["wind_speed_10m"]
-    wind_speed_unit = units["wind_speed_10m"]
+    return {
+        "temperature": current["temperature_2m"],
+        "temperature_unit": units["temperature_2m"],
+        "feels_like": current["apparent_temperature"],
+        "feels_like_unit": units["apparent_temperature"],
+        "humidity": current["relative_humidity_2m"],
+        "humidity_unit": units["relative_humidity_2m"],
+        "precipitation": current["precipitation"],
+        "precipitation_unit": units["precipitation"],
+        "wind_speed": current["wind_speed_10m"],
+        "wind_speed_unit": units["wind_speed_10m"],
+    }
 
+
+def get_forecast(data):
     daily = data["daily"]
     daily_units = data["daily_units"]
-    forecast_dates = daily["time"]
-    max_temperatures = daily["temperature_2m_max"]
-    min_temperatures = daily["temperature_2m_min"]
-    max_temperature_unit = daily_units["temperature_2m_max"]
-    min_temperature_unit = daily_units["temperature_2m_min"]
-except KeyError:
-    print("Weather data is missing some information.")
-    exit()
 
-if not forecast_dates or not max_temperatures or not min_temperatures:
-    print("Weather data is missing forecast information.")
-    exit()
+    forecast = {
+        "dates": daily["time"],
+        "max_temperatures": daily["temperature_2m_max"],
+        "min_temperatures": daily["temperature_2m_min"],
+        "max_temperature_unit": daily_units["temperature_2m_max"],
+        "min_temperature_unit": daily_units["temperature_2m_min"],
+    }
 
-print("\nCurrent Weather Report")
-print("----------------------")
-print(f"Location      : {location_name}, {country}")
-print(f"Coordinates   : {lat}, {lon}")
-print(f"Temperature   : {temperature} {temperature_unit}")
-print(f"Feels like    : {feels_like} {feels_like_unit}")
-print(f"Humidity      : {humidity} {humidity_unit}")
-print(f"Precipitation : {precipitation} {precipitation_unit}")
-print(f"Wind speed    : {wind_speed} {wind_speed_unit}")
+    if (
+        not forecast["dates"]
+        or not forecast["max_temperatures"]
+        or not forecast["min_temperatures"]
+    ):
+        raise ValueError("missing forecast information")
 
-print("\nToday's Forecast")
-print("----------------")
-print(f"High          : {max_temperatures[0]} {max_temperature_unit}")
-print(f"Low           : {min_temperatures[0]} {min_temperature_unit}")
+    return forecast
 
-print("\n7-Day Forecast")
-print("--------------")
-for index in range(min(len(forecast_dates), len(min_temperatures), len(max_temperatures))):
+
+def print_weather_report(location, current_weather, forecast):
+    print("\nCurrent Weather Report")
+    print("----------------------")
+    print(f"Location      : {location['name']}, {location['country']}")
+    print(f"Coordinates   : {location['latitude']}, {location['longitude']}")
     print(
-        f"{forecast_dates[index]} : "
-        f"{min_temperatures[index]} {min_temperature_unit} - "
-        f"{max_temperatures[index]} {max_temperature_unit}"
+        f"Temperature   : {current_weather['temperature']} "
+        f"{current_weather['temperature_unit']}"
     )
+    print(
+        f"Feels like    : {current_weather['feels_like']} "
+        f"{current_weather['feels_like_unit']}"
+    )
+    print(f"Humidity      : {current_weather['humidity']} {current_weather['humidity_unit']}")
+    print(
+        f"Precipitation : {current_weather['precipitation']} "
+        f"{current_weather['precipitation_unit']}"
+    )
+    print(
+        f"Wind speed    : {current_weather['wind_speed']} "
+        f"{current_weather['wind_speed_unit']}"
+    )
+
+    print("\nToday's Forecast")
+    print("----------------")
+    print(f"High          : {forecast['max_temperatures'][0]} {forecast['max_temperature_unit']}")
+    print(f"Low           : {forecast['min_temperatures'][0]} {forecast['min_temperature_unit']}")
+
+    print("\n7-Day Forecast")
+    print("--------------")
+    forecast_days = min(
+        len(forecast["dates"]),
+        len(forecast["min_temperatures"]),
+        len(forecast["max_temperatures"]),
+    )
+    for index in range(forecast_days):
+        print(
+            f"{forecast['dates'][index]} : "
+            f"{forecast['min_temperatures'][index]} {forecast['min_temperature_unit']} - "
+            f"{forecast['max_temperatures'][index]} {forecast['max_temperature_unit']}"
+        )
+
+
+def main():
+    city = input("Enter city name:").strip()
+
+    if not city:
+        print("City name cannot be empty.")
+        return
+
+    try:
+        location = get_location(city)
+    except requests.exceptions.RequestException:
+        print("Could not find the city. Please check your internet connection and try again.")
+        return
+    except ValueError:
+        print("Could not read city data from the server.")
+        return
+    except (KeyError, IndexError):
+        print("City not found. Please try another city name.")
+        return
+
+    try:
+        weather_data = get_weather_data(location["latitude"], location["longitude"])
+    except requests.exceptions.RequestException:
+        print("Could not fetch weather data. Please check your internet connection and try again.")
+        return
+    except ValueError:
+        print("Could not read weather data from the server.")
+        return
+
+    try:
+        current_weather = get_current_weather(weather_data)
+        forecast = get_forecast(weather_data)
+    except KeyError:
+        print("Weather data is missing some information.")
+        return
+    except ValueError:
+        print("Weather data is missing forecast information.")
+        return
+
+    print_weather_report(location, current_weather, forecast)
+
+
+if __name__ == "__main__":
+    main()

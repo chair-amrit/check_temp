@@ -1,75 +1,101 @@
-# Weather API Python Project
+# Weather API CLI
 
-A simple Python command-line project made to understand the basics of working with APIs.
+A Python command-line weather application that searches for a city, resolves its
+coordinates, fetches live forecast data from Open-Meteo, and prints a readable
+weather report in the terminal.
 
-This project takes a city name as input, finds its latitude and longitude using geocoding, fetches live weather data from Open-Meteo, and prints a clean weather report in the terminal.
-
-I made this as a beginner-friendly B.Tech student project to practice Python, API requests, JSON data, and basic error handling.
+The project is designed as a clean beginner-friendly API integration example,
+with reusable functions, explicit error handling, typed function signatures, and
+basic automated tests.
 
 ## Features
 
 - Search weather by city name
-- Convert city name into latitude and longitude
-- Fetch current weather data
-- Show temperature, feels-like temperature, wind speed, humidity, and precipitation
-- Show today's high and low temperature
-- Show a 7-day temperature forecast
-- Handle invalid input, missing city data, API errors, and network issues
-- Code is organized into reusable functions
+- Resolve city name to latitude and longitude using Open-Meteo Geocoding API
+- Fetch current weather from Open-Meteo Forecast API
+- Display temperature, feels-like temperature, humidity, precipitation, and wind
+  speed
+- Display today's low and high temperature
+- Display a 7-day temperature forecast
+- Support both interactive input and command-line arguments
+- Format numeric weather values consistently to one decimal place
+- Handle empty input, city-not-found results, timeouts, network failures, API
+  failures, and malformed API responses
+- Keep API parsing, report building, and terminal printing separated
+- Include unit tests for core parsing and edge cases
 
-## Technologies Used
+## Technologies
 
-- Python
-- Requests library
-- Open-Meteo Forecast API
+- Python 3
+- Requests
 - Open-Meteo Geocoding API
+- Open-Meteo Forecast API
+- unittest
 
-## Project Files
+## Project Structure
 
 ```text
 weatherapi/
-├── temperature.py
-├── requirements.txt
-└── README.md
+|-- main.py
+|-- requirements.txt
+|-- README.md
+|-- tests/
+|   `-- test_main.py
+`-- .gitignore
 ```
 
 ## Installation
 
-1. Clone this repository:
+Clone the repository:
 
 ```bash
 git clone https://github.com/chair-amrit/check_temp.git
-```
-
-2. Go inside the project folder:
-
-```bash
 cd check_temp
 ```
 
-3. Install the required packages:
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## How to Run
+On Windows, if `python` does not work, use `py` instead.
+
+## Usage
+
+Run interactively:
 
 ```bash
-python temperature.py
+python main.py
 ```
 
-On Windows, if `python` does not work, try:
+Then enter a city name when prompted:
+
+```text
+Enter city name: Chennai
+```
+
+Run with a command-line city argument:
 
 ```bash
-py temperature.py
+python main.py London
+```
+
+For city names with multiple words:
+
+```bash
+python main.py New York
+```
+
+Windows alternative:
+
+```bash
+py main.py London
 ```
 
 ## Example Output
 
 ```text
-Enter city name:Chennai
-
 Weather Report
 ========================================
 Location      : Chennai, India
@@ -87,39 +113,80 @@ Today         : 30.5 deg C - 38.6 deg C
 ----------------------------------------
 Date                Low       High
 ----------------------------------------
-2026-07-08      30.5 deg C  38.6 deg C
-2026-07-09      29.1 deg C  37.7 deg C
-2026-07-10      28.4 deg C  37.8 deg C
+2026-07-27      30.5 deg C  38.6 deg C
+2026-07-28      29.1 deg C  37.7 deg C
+2026-07-29      28.4 deg C  37.8 deg C
 ```
 
 ## How It Works
 
-1. The user enters a city name.
-2. The program uses the Open-Meteo Geocoding API to get latitude and longitude.
-3. The program sends those coordinates to the Open-Meteo Forecast API.
-4. The API response is received as JSON.
-5. The program extracts useful weather details and prints them in a readable format.
+1. The application accepts a city name from command-line arguments or interactive
+   input.
+2. `get_location()` calls the Open-Meteo Geocoding API and extracts the city
+   name, country, latitude, and longitude.
+3. `get_weather_data()` calls the Open-Meteo Forecast API using those
+   coordinates.
+4. `get_current_weather()` validates and extracts current weather fields.
+5. `get_forecast()` validates and extracts daily forecast fields.
+6. `build_weather_report()` combines location, current weather, and forecast
+   data into a reusable report dictionary.
+7. `print_weather_report()` formats and prints the final terminal output.
+
+## Error Handling
+
+The application gives clear messages for common failure cases:
+
+- Empty city input
+- City not found
+- Location request timeout
+- Weather request timeout
+- Network connection failure
+- API service unavailable
+- Malformed or incomplete API response data
+
+Required API fields are validated inside the parsing functions, so malformed
+responses are detected close to where the data is used.
+
+## Testing
+
+Run the test suite:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Windows alternative:
+
+```bash
+py -m unittest discover -s tests
+```
+
+The current tests cover:
+
+- City not found
+- Missing API fields
+- Successful current weather parsing
+- Forecast length handling when daily arrays have different lengths
 
 ## Main Functions
 
-- `get_location(city)` gets city details and coordinates
-- `get_weather_data(lat, lon)` fetches weather data from the API
-- `get_current_weather(data)` extracts current weather details
-- `get_forecast(data)` extracts forecast details
-- `print_weather_report(...)` prints the final report
-- `main()` controls the program flow
-
-## What I Learned
-
-Through this project, I learned how Python can communicate with external APIs. I also practiced taking user input, validating data, handling errors, reading JSON responses, and organizing code into reusable functions.
+- `get_location(city, session)` resolves a city to location details.
+- `get_weather_data(latitude, longitude, session)` fetches forecast data.
+- `get_current_weather(data)` validates and extracts current weather.
+- `get_forecast(data)` validates and extracts daily forecast data.
+- `build_weather_report(location, weather_data)` builds reusable report data.
+- `print_weather_report(report)` prints the terminal report.
+- `get_city_from_args(args)` supports command-line city input.
+- `main()` controls the application flow.
 
 ## Future Improvements
 
-- Add command-line arguments
 - Save weather reports to a file
-- Add hourly forecast
-- Convert this into a small Flask or FastAPI web API
+- Add hourly forecast details
+- Add unit conversion options
+- Add JSON output mode for scripting
+- Convert the project into a small Flask or FastAPI web API
 
-## About
+## Author
 
-This is a basic learning project made as part of my programming practice as a B.Tech student.
+Made by Amrit Rajkumar as a Python API practice project.

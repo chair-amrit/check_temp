@@ -4,6 +4,15 @@ from typing import Any
 import requests
 
 
+def require_fields(data: dict[str, Any], fields: list[str], source: str) -> None:
+    if not isinstance(data, dict):
+        raise ValueError(f"{source} must be an object")
+
+    missing_fields = [field for field in fields if field not in data]
+    if missing_fields:
+        raise ValueError(f"{source} missing fields: {', '.join(missing_fields)}")
+
+
 def get_location(city: str, session: requests.Session) -> dict[str, Any]:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
@@ -22,6 +31,8 @@ def get_location(city: str, session: requests.Session) -> dict[str, Any]:
         raise LookupError("city not found")
 
     location = results[0]
+    require_fields(location, ["name", "country", "latitude", "longitude"], "location")
+
     return {
         "name": location["name"],
         "country": location["country"],
@@ -31,7 +42,7 @@ def get_location(city: str, session: requests.Session) -> dict[str, Any]:
 
 
 def get_weather_data(
-    lat: float, lon: float, session: requests.Session
+    latitude: float, longitude: float, session: requests.Session
 ) -> dict[str, Any]:
     weather_fields = [
         "temperature_2m",
@@ -42,8 +53,8 @@ def get_weather_data(
     ]
     url = "https://api.open-meteo.com/v1/forecast"
     weather_params = {
-        "latitude": lat,
-        "longitude": lon,
+        "latitude": latitude,
+        "longitude": longitude,
         "current": ",".join(weather_fields),
         "daily": "temperature_2m_max,temperature_2m_min",
         "forecast_days": 7,
@@ -56,8 +67,32 @@ def get_weather_data(
 
 
 def get_current_weather(data: dict[str, Any]) -> dict[str, Any]:
+    require_fields(data, ["current", "current_units"], "weather data")
+
     current = data["current"]
     units = data["current_units"]
+    require_fields(
+        current,
+        [
+            "temperature_2m",
+            "apparent_temperature",
+            "relative_humidity_2m",
+            "precipitation",
+            "wind_speed_10m",
+        ],
+        "current weather",
+    )
+    require_fields(
+        units,
+        [
+            "temperature_2m",
+            "apparent_temperature",
+            "relative_humidity_2m",
+            "precipitation",
+            "wind_speed_10m",
+        ],
+        "current weather units",
+    )
 
     return {
         "temperature": current["temperature_2m"],
@@ -74,8 +109,20 @@ def get_current_weather(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_forecast(data: dict[str, Any]) -> dict[str, Any]:
+    require_fields(data, ["daily", "daily_units"], "weather data")
+
     daily = data["daily"]
     daily_units = data["daily_units"]
+    require_fields(
+        daily,
+        ["time", "temperature_2m_max", "temperature_2m_min"],
+        "daily forecast",
+    )
+    require_fields(
+        daily_units,
+        ["temperature_2m_max", "temperature_2m_min"],
+        "daily forecast units",
+    )
 
     forecast = {
         "dates": daily["time"],
@@ -204,7 +251,7 @@ def main() -> None:
     except LookupError:
         print("City not found. Please try another city name.")
         return
-    except (KeyError, TypeError, ValueError):
+    except (TypeError, ValueError):
         print("Location service returned malformed data.")
         return
 
@@ -233,11 +280,8 @@ def main() -> None:
 
     try:
         report = build_weather_report(location, weather_data)
-    except (KeyError, TypeError):
+    except (TypeError, ValueError):
         print("Weather API returned malformed data.")
-        return
-    except ValueError:
-        print("Weather data is missing forecast information.")
         return
 
     print_weather_report(report)

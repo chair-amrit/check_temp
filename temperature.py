@@ -1,3 +1,4 @@
+import sys
 from typing import Any
 
 import requests
@@ -104,6 +105,13 @@ def build_weather_report(
     }
 
 
+def format_number(value: Any) -> str:
+    if isinstance(value, int | float):
+        return f"{value:.1f}"
+
+    return str(value)
+
+
 def print_weather_report(report: dict[str, dict[str, Any]]) -> None:
     location = report["location"]
     current_weather = report["current_weather"]
@@ -115,24 +123,28 @@ def print_weather_report(report: dict[str, dict[str, Any]]) -> None:
     print(f"Coordinates   : {location['latitude']}, {location['longitude']}")
     print("-" * 40)
     print(
-        f"Temperature   : {current_weather['temperature']} "
+        f"Temperature   : {format_number(current_weather['temperature'])} "
         f"{current_weather['temperature_unit']}"
     )
     print(
-        f"Feels like    : {current_weather['feels_like']} "
+        f"Feels like    : {format_number(current_weather['feels_like'])} "
         f"{current_weather['feels_like_unit']}"
     )
-    print(f"Wind          : {current_weather['wind_speed']} {current_weather['wind_speed_unit']}")
+    print(
+        f"Wind          : {format_number(current_weather['wind_speed'])} "
+        f"{current_weather['wind_speed_unit']}"
+    )
     print(f"Humidity      : {current_weather['humidity']}{current_weather['humidity_unit']}")
     print(
-        f"Precipitation : {current_weather['precipitation']} "
+        f"Precipitation : {format_number(current_weather['precipitation'])} "
         f"{current_weather['precipitation_unit']}"
     )
     print("-" * 40)
     print(
-        f"Today         : {forecast['min_temperatures'][0]} "
+        f"Today         : {format_number(forecast['min_temperatures'][0])} "
         f"{forecast['min_temperature_unit']} - "
-        f"{forecast['max_temperatures'][0]} {forecast['max_temperature_unit']}"
+        f"{format_number(forecast['max_temperatures'][0])} "
+        f"{forecast['max_temperature_unit']}"
     )
 
     print("\n7-Day Forecast")
@@ -145,13 +157,26 @@ def print_weather_report(report: dict[str, dict[str, Any]]) -> None:
         len(forecast["max_temperatures"]),
     )
     for index in range(forecast_days):
-        low = f"{forecast['min_temperatures'][index]} {forecast['min_temperature_unit']}"
-        high = f"{forecast['max_temperatures'][index]} {forecast['max_temperature_unit']}"
+        low = (
+            f"{format_number(forecast['min_temperatures'][index])} "
+            f"{forecast['min_temperature_unit']}"
+        )
+        high = (
+            f"{format_number(forecast['max_temperatures'][index])} "
+            f"{forecast['max_temperature_unit']}"
+        )
         print(f"{forecast['dates'][index]:<12} {low:>10} {high:>10}")
 
 
+def get_city_from_args(args: list[str]) -> str:
+    if args:
+        return " ".join(args).strip()
+
+    return input("Enter city name:").strip()
+
+
 def main() -> None:
-    city = input("Enter city name:").strip()
+    city = get_city_from_args(sys.argv[1:])
 
     if not city:
         print("City name cannot be empty.")
@@ -161,7 +186,10 @@ def main() -> None:
 
     try:
         location = get_location(city, session)
-    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+    except requests.exceptions.Timeout:
+        print("Location request timed out. Please try again.")
+        return
+    except requests.exceptions.ConnectionError:
         print(
             "Could not connect to the location service. "
             "Please check your internet connection."
@@ -181,8 +209,13 @@ def main() -> None:
         return
 
     try:
-        weather_data = get_weather_data(location["latitude"], location["longitude"], session)
-    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        weather_data = get_weather_data(
+            location["latitude"], location["longitude"], session
+        )
+    except requests.exceptions.Timeout:
+        print("Weather request timed out. Please try again.")
+        return
+    except requests.exceptions.ConnectionError:
         print(
             "Could not connect to the weather service. "
             "Please check your internet connection."

@@ -1,7 +1,9 @@
+from typing import Any
+
 import requests
 
 
-def get_location(city, session):
+def get_location(city: str, session: requests.Session) -> dict[str, Any]:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
         "name": city,
@@ -27,7 +29,9 @@ def get_location(city, session):
     }
 
 
-def get_weather_data(lat, lon, session):
+def get_weather_data(
+    lat: float, lon: float, session: requests.Session
+) -> dict[str, Any]:
     weather_fields = [
         "temperature_2m",
         "apparent_temperature",
@@ -50,7 +54,7 @@ def get_weather_data(lat, lon, session):
     return response.json()
 
 
-def get_current_weather(data):
+def get_current_weather(data: dict[str, Any]) -> dict[str, Any]:
     current = data["current"]
     units = data["current_units"]
 
@@ -68,7 +72,7 @@ def get_current_weather(data):
     }
 
 
-def get_forecast(data):
+def get_forecast(data: dict[str, Any]) -> dict[str, Any]:
     daily = data["daily"]
     daily_units = data["daily_units"]
 
@@ -90,17 +94,40 @@ def get_forecast(data):
     return forecast
 
 
-def print_weather_report(location, current_weather, forecast):
+def build_weather_report(
+    location: dict[str, Any], weather_data: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    return {
+        "location": location,
+        "current_weather": get_current_weather(weather_data),
+        "forecast": get_forecast(weather_data),
+    }
+
+
+def print_weather_report(report: dict[str, dict[str, Any]]) -> None:
+    location = report["location"]
+    current_weather = report["current_weather"]
+    forecast = report["forecast"]
+
     print("\nWeather Report")
     print("=" * 40)
     print(f"Location      : {location['name']}, {location['country']}")
     print(f"Coordinates   : {location['latitude']}, {location['longitude']}")
     print("-" * 40)
-    print(f"Temperature   : {current_weather['temperature']} {current_weather['temperature_unit']}")
-    print(f"Feels like    : {current_weather['feels_like']} {current_weather['feels_like_unit']}")
+    print(
+        f"Temperature   : {current_weather['temperature']} "
+        f"{current_weather['temperature_unit']}"
+    )
+    print(
+        f"Feels like    : {current_weather['feels_like']} "
+        f"{current_weather['feels_like_unit']}"
+    )
     print(f"Wind          : {current_weather['wind_speed']} {current_weather['wind_speed_unit']}")
     print(f"Humidity      : {current_weather['humidity']}{current_weather['humidity_unit']}")
-    print(f"Precipitation : {current_weather['precipitation']} {current_weather['precipitation_unit']}")
+    print(
+        f"Precipitation : {current_weather['precipitation']} "
+        f"{current_weather['precipitation_unit']}"
+    )
     print("-" * 40)
     print(
         f"Today         : {forecast['min_temperatures'][0]} "
@@ -123,7 +150,7 @@ def print_weather_report(location, current_weather, forecast):
         print(f"{forecast['dates'][index]:<12} {low:>10} {high:>10}")
 
 
-def main():
+def main() -> None:
     city = input("Enter city name:").strip()
 
     if not city:
@@ -134,39 +161,53 @@ def main():
 
     try:
         location = get_location(city, session)
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        print(
+            "Could not connect to the location service. "
+            "Please check your internet connection."
+        )
+        return
+    except requests.exceptions.HTTPError:
+        print("Location service is unavailable. Please try again later.")
+        return
     except requests.exceptions.RequestException:
-        print("Could not find the city. Please check your internet connection and try again.")
+        print("Location request failed. Please try again.")
         return
     except LookupError:
         print("City not found. Please try another city name.")
         return
-    except ValueError:
-        print("Could not read city data from the server.")
-        return
-    except (KeyError, IndexError):
-        print("City not found. Please try another city name.")
+    except (KeyError, TypeError, ValueError):
+        print("Location service returned malformed data.")
         return
 
     try:
         weather_data = get_weather_data(location["latitude"], location["longitude"], session)
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        print(
+            "Could not connect to the weather service. "
+            "Please check your internet connection."
+        )
+        return
+    except requests.exceptions.HTTPError:
+        print("Weather API is unavailable. Please try again later.")
+        return
     except requests.exceptions.RequestException:
-        print("Could not fetch weather data. Please check your internet connection and try again.")
+        print("Weather request failed. Please try again.")
         return
     except ValueError:
-        print("Could not read weather data from the server.")
+        print("Weather API returned malformed data.")
         return
 
     try:
-        current_weather = get_current_weather(weather_data)
-        forecast = get_forecast(weather_data)
-    except KeyError:
-        print("Weather data is missing some information.")
+        report = build_weather_report(location, weather_data)
+    except (KeyError, TypeError):
+        print("Weather API returned malformed data.")
         return
     except ValueError:
         print("Weather data is missing forecast information.")
         return
 
-    print_weather_report(location, current_weather, forecast)
+    print_weather_report(report)
 
 
 if __name__ == "__main__":

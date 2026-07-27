@@ -1,7 +1,7 @@
 import requests
 
 
-def get_location(city):
+def get_location(city, session):
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
         "name": city,
@@ -10,11 +10,15 @@ def get_location(city):
         "format": "json",
     }
 
-    response = requests.get(geocoding_url, params=geocoding_params, timeout=10)
+    response = session.get(geocoding_url, params=geocoding_params, timeout=10)
     response.raise_for_status()
     location_data = response.json()
 
-    location = location_data["results"][0]
+    results = location_data.get("results", [])
+    if not results:
+        raise LookupError("city not found")
+
+    location = results[0]
     return {
         "name": location["name"],
         "country": location["country"],
@@ -23,7 +27,7 @@ def get_location(city):
     }
 
 
-def get_weather_data(lat, lon):
+def get_weather_data(lat, lon, session):
     weather_fields = [
         "temperature_2m",
         "apparent_temperature",
@@ -31,19 +35,17 @@ def get_weather_data(lat, lon):
         "precipitation",
         "wind_speed_10m",
     ]
-    current_weather = ",".join(weather_fields)
-    daily_weather = "temperature_2m_max,temperature_2m_min"
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={lat}"
-        f"&longitude={lon}"
-        f"&current={current_weather}"
-        f"&daily={daily_weather}"
-        "&forecast_days=7"
-        "&timezone=auto"
-    )
+    url = "https://api.open-meteo.com/v1/forecast"
+    weather_params = {
+        "latitude": lat,
+        "longitude": lon,
+        "current": ",".join(weather_fields),
+        "daily": "temperature_2m_max,temperature_2m_min",
+        "forecast_days": 7,
+        "timezone": "auto",
+    }
 
-    response = requests.get(url, timeout=10)
+    response = session.get(url, params=weather_params, timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -128,10 +130,15 @@ def main():
         print("City name cannot be empty.")
         return
 
+    session = requests.Session()
+
     try:
-        location = get_location(city)
+        location = get_location(city, session)
     except requests.exceptions.RequestException:
         print("Could not find the city. Please check your internet connection and try again.")
+        return
+    except LookupError:
+        print("City not found. Please try another city name.")
         return
     except ValueError:
         print("Could not read city data from the server.")
@@ -141,7 +148,7 @@ def main():
         return
 
     try:
-        weather_data = get_weather_data(location["latitude"], location["longitude"])
+        weather_data = get_weather_data(location["latitude"], location["longitude"], session)
     except requests.exceptions.RequestException:
         print("Could not fetch weather data. Please check your internet connection and try again.")
         return

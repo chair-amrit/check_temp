@@ -1,6 +1,4 @@
-import io
 import unittest
-from contextlib import redirect_stdout
 
 import main as weather
 
@@ -61,42 +59,59 @@ class WeatherParsingTests(unittest.TestCase):
         self.assertEqual(current_weather["humidity"], 72)
         self.assertEqual(current_weather["wind_speed"], 8.5)
 
-    def test_forecast_length_handling(self):
-        report = {
-            "location": {
-                "name": "Chennai",
-                "country": "India",
-                "latitude": 13.0878,
-                "longitude": 80.2785,
+    def test_forecast_length_validation(self):
+        data = {
+            "daily": {
+                "time": ["2026-07-27", "2026-07-28"],
+                "temperature_2m_min": [24],
+                "temperature_2m_max": [31, 32, 33],
             },
-            "current_weather": {
-                "temperature": 30,
-                "temperature_unit": "deg C",
-                "feels_like": 34,
-                "feels_like_unit": "deg C",
-                "humidity": 58,
-                "humidity_unit": "%",
-                "precipitation": 0,
-                "precipitation_unit": "mm",
-                "wind_speed": 12,
-                "wind_speed_unit": "km/h",
-            },
-            "forecast": {
-                "dates": ["2026-07-27", "2026-07-28"],
-                "min_temperatures": [24],
-                "max_temperatures": [31, 32, 33],
-                "min_temperature_unit": "deg C",
-                "max_temperature_unit": "deg C",
+            "daily_units": {
+                "temperature_2m_min": "deg C",
+                "temperature_2m_max": "deg C",
             },
         }
-        output = io.StringIO()
 
-        with redirect_stdout(output):
-            weather.print_weather_report(report)
+        with self.assertRaises(ValueError):
+            weather.get_forecast(data)
 
-        report_text = output.getvalue()
-        self.assertIn("2026-07-27", report_text)
-        self.assertNotIn("2026-07-28", report_text)
+    def test_location_coordinate_type_validation(self):
+        session = FakeSession(
+            {
+                "results": [
+                    {
+                        "name": "Bad City",
+                        "country": "Nowhere",
+                        "latitude": "bad",
+                        "longitude": 80.2785,
+                    }
+                ]
+            }
+        )
+
+        with self.assertRaises(ValueError):
+            weather.get_location("Bad City", session)
+
+    def test_current_weather_type_validation(self):
+        data = {
+            "current": {
+                "temperature_2m": "hot",
+                "apparent_temperature": 29.1,
+                "relative_humidity_2m": 72,
+                "precipitation": 0,
+                "wind_speed_10m": 8.5,
+            },
+            "current_units": {
+                "temperature_2m": "deg C",
+                "apparent_temperature": "deg C",
+                "relative_humidity_2m": "%",
+                "precipitation": "mm",
+                "wind_speed_10m": "km/h",
+            },
+        }
+
+        with self.assertRaises(ValueError):
+            weather.get_current_weather(data)
 
 
 if __name__ == "__main__":

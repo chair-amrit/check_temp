@@ -62,6 +62,30 @@ def require_fields(data: dict[str, Any], fields: Sequence[str], source: str) -> 
         raise ValueError(f"{source} missing fields: {', '.join(missing_fields)}")
 
 
+def require_number(value: Any, source: str) -> Number:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"{source} must be a number")
+
+    return value
+
+
+def require_number_list(value: Any, source: str) -> list[Number]:
+    if not isinstance(value, list):
+        raise ValueError(f"{source} must be a list")
+
+    return [require_number(item, f"{source} item") for item in value]
+
+
+def require_string_list(value: Any, source: str) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{source} must be a list")
+
+    if not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{source} items must be strings")
+
+    return value
+
+
 def get_location(city: str, session: requests.Session) -> Location:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
@@ -81,17 +105,19 @@ def get_location(city: str, session: requests.Session) -> Location:
 
     location = results[0]
     require_fields(location, LOCATION_FIELDS, "location")
+    latitude = require_number(location["latitude"], "location latitude")
+    longitude = require_number(location["longitude"], "location longitude")
 
     return {
         "name": location["name"],
         "country": location["country"],
-        "latitude": location["latitude"],
-        "longitude": location["longitude"],
+        "latitude": latitude,
+        "longitude": longitude,
     }
 
 
 def get_weather_data(
-    latitude: float, longitude: float, session: requests.Session
+    latitude: Number, longitude: Number, session: requests.Session
 ) -> dict[str, Any]:
     url = "https://api.open-meteo.com/v1/forecast"
     weather_params = {
@@ -125,15 +151,15 @@ def get_current_weather(data: dict[str, Any]) -> CurrentWeather:
     )
 
     return {
-        "temperature": current["temperature_2m"],
+        "temperature": require_number(current["temperature_2m"], "temperature"),
         "temperature_unit": units["temperature_2m"],
-        "feels_like": current["apparent_temperature"],
+        "feels_like": require_number(current["apparent_temperature"], "feels like"),
         "feels_like_unit": units["apparent_temperature"],
-        "humidity": current["relative_humidity_2m"],
+        "humidity": require_number(current["relative_humidity_2m"], "humidity"),
         "humidity_unit": units["relative_humidity_2m"],
-        "precipitation": current["precipitation"],
+        "precipitation": require_number(current["precipitation"], "precipitation"),
         "precipitation_unit": units["precipitation"],
-        "wind_speed": current["wind_speed_10m"],
+        "wind_speed": require_number(current["wind_speed_10m"], "wind speed"),
         "wind_speed_unit": units["wind_speed_10m"],
     }
 
@@ -154,10 +180,14 @@ def get_forecast(data: dict[str, Any]) -> Forecast:
         "daily forecast units",
     )
 
-    forecast = {
-        "dates": daily["time"],
-        "max_temperatures": daily["temperature_2m_max"],
-        "min_temperatures": daily["temperature_2m_min"],
+    forecast: Forecast = {
+        "dates": require_string_list(daily["time"], "forecast dates"),
+        "max_temperatures": require_number_list(
+            daily["temperature_2m_max"], "forecast maximum temperatures"
+        ),
+        "min_temperatures": require_number_list(
+            daily["temperature_2m_min"], "forecast minimum temperatures"
+        ),
         "max_temperature_unit": daily_units["temperature_2m_max"],
         "min_temperature_unit": daily_units["temperature_2m_min"],
     }
@@ -168,6 +198,13 @@ def get_forecast(data: dict[str, Any]) -> Forecast:
         or not forecast["min_temperatures"]
     ):
         raise ValueError("missing forecast information")
+
+    if not (
+        len(forecast["dates"])
+        == len(forecast["max_temperatures"])
+        == len(forecast["min_temperatures"])
+    ):
+        raise ValueError("forecast arrays must have matching lengths")
 
     return forecast
 
@@ -228,12 +265,7 @@ def print_weather_report(report: WeatherReport) -> None:
     print("-" * 40)
     print(f"{'Date':<12} {'Low':>10} {'High':>10}")
     print("-" * 40)
-    forecast_days = min(
-        len(forecast["dates"]),
-        len(forecast["min_temperatures"]),
-        len(forecast["max_temperatures"]),
-    )
-    for index in range(forecast_days):
+    for index, date in enumerate(forecast["dates"]):
         low = (
             f"{format_number(forecast['min_temperatures'][index])} "
             f"{forecast['min_temperature_unit']}"
@@ -242,7 +274,7 @@ def print_weather_report(report: WeatherReport) -> None:
             f"{format_number(forecast['max_temperatures'][index])} "
             f"{forecast['max_temperature_unit']}"
         )
-        print(f"{forecast['dates'][index]:<12} {low:>10} {high:>10}")
+        print(f"{date:<12} {low:>10} {high:>10}")
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:

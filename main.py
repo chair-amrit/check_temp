@@ -1,3 +1,4 @@
+import argparse
 import sys
 from typing import Any
 
@@ -215,19 +216,32 @@ def print_weather_report(report: dict[str, dict[str, Any]]) -> None:
         print(f"{forecast['dates'][index]:<12} {low:>10} {high:>10}")
 
 
+def parse_args(args: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Fetch and print a weather report for a city."
+    )
+    parser.add_argument(
+        "city",
+        nargs="*",
+        help="City name to search for. If omitted, you will be prompted.",
+    )
+    return parser.parse_args(args)
+
+
 def get_city_from_args(args: list[str]) -> str:
-    if args:
-        return " ".join(args).strip()
+    parsed_args = parse_args(args)
+    if parsed_args.city:
+        return " ".join(parsed_args.city).strip()
 
     return input("Enter city name:").strip()
 
 
-def main() -> None:
-    city = get_city_from_args(sys.argv[1:])
+def main(args: list[str] | None = None) -> int:
+    city = get_city_from_args(sys.argv[1:] if args is None else args)
 
     if not city:
         print("City name cannot be empty.")
-        return
+        return 1
 
     session = requests.Session()
 
@@ -235,25 +249,25 @@ def main() -> None:
         location = get_location(city, session)
     except requests.exceptions.Timeout:
         print("Location request timed out. Please try again.")
-        return
+        return 1
     except requests.exceptions.ConnectionError:
         print(
             "Could not connect to the location service. "
             "Please check your internet connection."
         )
-        return
+        return 1
     except requests.exceptions.HTTPError:
         print("Location service is unavailable. Please try again later.")
-        return
+        return 1
     except requests.exceptions.RequestException:
         print("Location request failed. Please try again.")
-        return
+        return 1
     except LookupError:
         print("City not found. Please try another city name.")
-        return
+        return 1
     except (TypeError, ValueError):
         print("Location service returned malformed data.")
-        return
+        return 1
 
     try:
         weather_data = get_weather_data(
@@ -261,31 +275,32 @@ def main() -> None:
         )
     except requests.exceptions.Timeout:
         print("Weather request timed out. Please try again.")
-        return
+        return 1
     except requests.exceptions.ConnectionError:
         print(
             "Could not connect to the weather service. "
             "Please check your internet connection."
         )
-        return
+        return 1
     except requests.exceptions.HTTPError:
         print("Weather API is unavailable. Please try again later.")
-        return
+        return 1
     except requests.exceptions.RequestException:
         print("Weather request failed. Please try again.")
-        return
+        return 1
     except ValueError:
         print("Weather API returned malformed data.")
-        return
+        return 1
 
     try:
         report = build_weather_report(location, weather_data)
     except (TypeError, ValueError):
         print("Weather API returned malformed data.")
-        return
+        return 1
 
     print_weather_report(report)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

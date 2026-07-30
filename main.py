@@ -1,11 +1,15 @@
 import argparse
 import sys
-from typing import Any, Sequence, TypedDict
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Sequence, TypeVar, TypedDict
 
 import requests
 
 
 Number = int | float
+T = TypeVar("T")
+REQUEST_TIMEOUT_SECONDS = 10
 
 LOCATION_FIELDS = ("name", "country", "latitude", "longitude")
 CURRENT_WEATHER_FIELDS = (
@@ -53,6 +57,43 @@ class WeatherReport(TypedDict):
     forecast: Forecast
 
 
+@dataclass(frozen=True)
+class ServiceErrorMessages:
+    timeout: str
+    connection: str
+    http: str
+    request: str
+    malformed: str
+
+
+class AppError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+LOCATION_ERROR_MESSAGES = ServiceErrorMessages(
+    timeout="Location request timed out. Please try again.",
+    connection=(
+        "Could not connect to the location service. "
+        "Please check your internet connection."
+    ),
+    http="Location service is unavailable. Please try again later.",
+    request="Location request failed. Please try again.",
+    malformed="Location service returned malformed data.",
+)
+WEATHER_ERROR_MESSAGES = ServiceErrorMessages(
+    timeout="Weather request timed out. Please try again.",
+    connection=(
+        "Could not connect to the weather service. "
+        "Please check your internet connection."
+    ),
+    http="Weather API is unavailable. Please try again later.",
+    request="Weather request failed. Please try again.",
+    malformed="Weather API returned malformed data.",
+)
+
+
 def require_fields(data: dict[str, Any], fields: Sequence[str], source: str) -> None:
     if not isinstance(data, dict):
         raise ValueError(f"{source} must be an object")
@@ -86,6 +127,33 @@ def require_string_list(value: Any, source: str) -> list[str]:
     return value
 
 
+def fetch_json(
+    session: requests.Session, url: str, params: dict[str, Any]
+) -> dict[str, Any]:
+    response = session.get(url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("API response must be an object")
+
+    return payload
+
+
+def run_service_call(call: Callable[[], T], messages: ServiceErrorMessages) -> T:
+    try:
+        return call()
+    except requests.exceptions.Timeout as error:
+        raise AppError(messages.timeout) from error
+    except requests.exceptions.ConnectionError as error:
+        raise AppError(messages.connection) from error
+    except requests.exceptions.HTTPError as error:
+        raise AppError(messages.http) from error
+    except requests.exceptions.RequestException as error:
+        raise AppError(messages.request) from error
+    except (TypeError, ValueError) as error:
+        raise AppError(messages.malformed) from error
+
+
 def get_location(city: str, session: requests.Session) -> Location:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
@@ -95,9 +163,7 @@ def get_location(city: str, session: requests.Session) -> Location:
         "format": "json",
     }
 
-    response = session.get(geocoding_url, params=geocoding_params, timeout=10)
-    response.raise_for_status()
-    location_data = response.json()
+    location_data = fetch_json(session, geocoding_url, geocoding_params)
 
     results = location_data.get("results", [])
     if not results:
@@ -129,9 +195,7 @@ def get_weather_data(
         "timezone": "auto",
     }
 
-    response = session.get(url, params=weather_params, timeout=10)
-    response.raise_for_status()
-    return response.json()
+    return fetch_json(session, url, weather_params)
 
 
 def get_current_weather(data: dict[str, Any]) -> CurrentWeather:
@@ -307,56 +371,24 @@ def main(args: list[str] | None = None) -> int:
     session = requests.Session()
 
     try:
-        location = get_location(city, session)
-    except requests.exceptions.Timeout:
-        print("Location request timed out. Please try again.")
-        return 1
-    except requests.exceptions.ConnectionError:
-        print(
-            "Could not connect to the location service. "
-            "Please check your internet connection."
+        location = run_service_call(
+            lambda: get_location(city, session), LOCATION_ERROR_MESSAGES
         )
-        return 1
-    except requests.exceptions.HTTPError:
-        print("Location service is unavailable. Please try again later.")
-        return 1
-    except requests.exceptions.RequestException:
-        print("Location request failed. Please try again.")
-        return 1
+        weather_data = run_service_call(
+            lambda: get_weather_data(
+                location["latitude"], location["longitude"], session
+            ),
+            WEATHER_ERROR_MESSAGES,
+        )
+        report = build_weather_report(location, weather_data)
     except LookupError:
         print("City not found. Please try another city name.")
         return 1
+    except AppError as error:
+        print(error.message)
+        return 1
     except (TypeError, ValueError):
-        print("Location service returned malformed data.")
-        return 1
-
-    try:
-        weather_data = get_weather_data(
-            location["latitude"], location["longitude"], session
-        )
-    except requests.exceptions.Timeout:
-        print("Weather request timed out. Please try again.")
-        return 1
-    except requests.exceptions.ConnectionError:
-        print(
-            "Could not connect to the weather service. "
-            "Please check your internet connection."
-        )
-        return 1
-    except requests.exceptions.HTTPError:
-        print("Weather API is unavailable. Please try again later.")
-        return 1
-    except requests.exceptions.RequestException:
-        print("Weather request failed. Please try again.")
-        return 1
-    except ValueError:
-        print("Weather API returned malformed data.")
-        return 1
-
-    try:
-        report = build_weather_report(location, weather_data)
-    except (TypeError, ValueError):
-        print("Weather API returned malformed data.")
+        print(WEATHER_ERROR_MESSAGES.malformed)
         return 1
 
     print_weather_report(report)

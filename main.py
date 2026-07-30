@@ -1,11 +1,59 @@
 import argparse
 import sys
-from typing import Any
+from typing import Any, Sequence, TypedDict
 
 import requests
 
 
-def require_fields(data: dict[str, Any], fields: list[str], source: str) -> None:
+Number = int | float
+
+LOCATION_FIELDS = ("name", "country", "latitude", "longitude")
+CURRENT_WEATHER_FIELDS = (
+    "temperature_2m",
+    "apparent_temperature",
+    "relative_humidity_2m",
+    "precipitation",
+    "wind_speed_10m",
+)
+DAILY_FORECAST_FIELDS = ("time", "temperature_2m_max", "temperature_2m_min")
+DAILY_WEATHER_FIELDS = ("temperature_2m_max", "temperature_2m_min")
+
+
+class Location(TypedDict):
+    name: str
+    country: str
+    latitude: Number
+    longitude: Number
+
+
+class CurrentWeather(TypedDict):
+    temperature: Number
+    temperature_unit: str
+    feels_like: Number
+    feels_like_unit: str
+    humidity: Number
+    humidity_unit: str
+    precipitation: Number
+    precipitation_unit: str
+    wind_speed: Number
+    wind_speed_unit: str
+
+
+class Forecast(TypedDict):
+    dates: list[str]
+    max_temperatures: list[Number]
+    min_temperatures: list[Number]
+    max_temperature_unit: str
+    min_temperature_unit: str
+
+
+class WeatherReport(TypedDict):
+    location: Location
+    current_weather: CurrentWeather
+    forecast: Forecast
+
+
+def require_fields(data: dict[str, Any], fields: Sequence[str], source: str) -> None:
     if not isinstance(data, dict):
         raise ValueError(f"{source} must be an object")
 
@@ -14,7 +62,7 @@ def require_fields(data: dict[str, Any], fields: list[str], source: str) -> None
         raise ValueError(f"{source} missing fields: {', '.join(missing_fields)}")
 
 
-def get_location(city: str, session: requests.Session) -> dict[str, Any]:
+def get_location(city: str, session: requests.Session) -> Location:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
         "name": city,
@@ -32,7 +80,7 @@ def get_location(city: str, session: requests.Session) -> dict[str, Any]:
         raise LookupError("city not found")
 
     location = results[0]
-    require_fields(location, ["name", "country", "latitude", "longitude"], "location")
+    require_fields(location, LOCATION_FIELDS, "location")
 
     return {
         "name": location["name"],
@@ -45,19 +93,12 @@ def get_location(city: str, session: requests.Session) -> dict[str, Any]:
 def get_weather_data(
     latitude: float, longitude: float, session: requests.Session
 ) -> dict[str, Any]:
-    weather_fields = [
-        "temperature_2m",
-        "apparent_temperature",
-        "relative_humidity_2m",
-        "precipitation",
-        "wind_speed_10m",
-    ]
     url = "https://api.open-meteo.com/v1/forecast"
     weather_params = {
         "latitude": latitude,
         "longitude": longitude,
-        "current": ",".join(weather_fields),
-        "daily": "temperature_2m_max,temperature_2m_min",
+        "current": ",".join(CURRENT_WEATHER_FIELDS),
+        "daily": ",".join(DAILY_WEATHER_FIELDS),
         "forecast_days": 7,
         "timezone": "auto",
     }
@@ -67,31 +108,19 @@ def get_weather_data(
     return response.json()
 
 
-def get_current_weather(data: dict[str, Any]) -> dict[str, Any]:
+def get_current_weather(data: dict[str, Any]) -> CurrentWeather:
     require_fields(data, ["current", "current_units"], "weather data")
 
     current = data["current"]
     units = data["current_units"]
     require_fields(
         current,
-        [
-            "temperature_2m",
-            "apparent_temperature",
-            "relative_humidity_2m",
-            "precipitation",
-            "wind_speed_10m",
-        ],
+        CURRENT_WEATHER_FIELDS,
         "current weather",
     )
     require_fields(
         units,
-        [
-            "temperature_2m",
-            "apparent_temperature",
-            "relative_humidity_2m",
-            "precipitation",
-            "wind_speed_10m",
-        ],
+        CURRENT_WEATHER_FIELDS,
         "current weather units",
     )
 
@@ -109,19 +138,19 @@ def get_current_weather(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def get_forecast(data: dict[str, Any]) -> dict[str, Any]:
+def get_forecast(data: dict[str, Any]) -> Forecast:
     require_fields(data, ["daily", "daily_units"], "weather data")
 
     daily = data["daily"]
     daily_units = data["daily_units"]
     require_fields(
         daily,
-        ["time", "temperature_2m_max", "temperature_2m_min"],
+        DAILY_FORECAST_FIELDS,
         "daily forecast",
     )
     require_fields(
         daily_units,
-        ["temperature_2m_max", "temperature_2m_min"],
+        DAILY_WEATHER_FIELDS,
         "daily forecast units",
     )
 
@@ -144,8 +173,8 @@ def get_forecast(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_weather_report(
-    location: dict[str, Any], weather_data: dict[str, Any]
-) -> dict[str, dict[str, Any]]:
+    location: Location, weather_data: dict[str, Any]
+) -> WeatherReport:
     return {
         "location": location,
         "current_weather": get_current_weather(weather_data),
@@ -160,7 +189,7 @@ def format_number(value: Any) -> str:
     return str(value)
 
 
-def print_weather_report(report: dict[str, dict[str, Any]]) -> None:
+def print_weather_report(report: WeatherReport) -> None:
     location = report["location"]
     current_weather = report["current_weather"]
     forecast = report["forecast"]

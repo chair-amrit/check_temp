@@ -10,6 +10,7 @@ import requests
 Number = int | float
 T = TypeVar("T")
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 10
+GEOCODING_RESULT_COUNT = 5
 
 LOCATION_FIELDS = ("name", "country", "latitude", "longitude")
 CURRENT_WEATHER_FIELDS = (
@@ -117,6 +118,60 @@ def require_string(value: Any, source: str) -> str:
     return value
 
 
+def format_location_choice(location: dict[str, Any]) -> str:
+    name = require_string(location["name"], "location name")
+    country = require_string(location["country"], "location country")
+    parts = [name]
+
+    admin1 = location.get("admin1")
+    if isinstance(admin1, str) and admin1 not in parts:
+        parts.append(admin1)
+
+    if country not in parts:
+        parts.append(country)
+
+    return ", ".join(parts)
+
+
+def choose_location(results: list[Any]) -> dict[str, Any]:
+    locations: list[dict[str, Any]] = []
+
+    for index, result in enumerate(results, start=1):
+        if not isinstance(result, dict):
+            raise ValueError(f"location {index} must be an object")
+
+        require_fields(result, LOCATION_FIELDS, f"location {index}")
+        locations.append(result)
+
+    if len(locations) == 1:
+        return locations[0]
+
+    print("Multiple matching cities found:", file=sys.stderr)
+    for index, location in enumerate(locations, start=1):
+        print(f"{index}. {format_location_choice(location)}", file=sys.stderr)
+
+    while True:
+        print("Select location number [1]: ", end="", file=sys.stderr)
+        try:
+            choice = input().strip()
+        except EOFError:
+            return locations[0]
+
+        if not choice:
+            return locations[0]
+
+        try:
+            selected_index = int(choice)
+        except ValueError:
+            print("Please enter a number from the list.", file=sys.stderr)
+            continue
+
+        if 1 <= selected_index <= len(locations):
+            return locations[selected_index - 1]
+
+        print("Please choose one of the listed locations.", file=sys.stderr)
+
+
 def require_number_list(value: Any, source: str) -> list[Number]:
     if not isinstance(value, list):
         raise ValueError(f"{source} must be a list")
@@ -170,7 +225,7 @@ def get_location(
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
         "name": city,
-        "count": 1,
+        "count": GEOCODING_RESULT_COUNT,
         "language": "en",
         "format": "json",
     }
@@ -186,17 +241,13 @@ def get_location(
     if not results:
         raise LookupError("city not found")
 
-    location = results[0]
-    if not isinstance(location, dict):
-        raise ValueError("location must be an object")
-
-    require_fields(location, LOCATION_FIELDS, "location")
+    location = choose_location(results)
     latitude = require_number(location["latitude"], "location latitude")
     longitude = require_number(location["longitude"], "location longitude")
 
     return {
-        "name": location["name"],
-        "country": location["country"],
+        "name": require_string(location["name"], "location name"),
+        "country": require_string(location["country"], "location country"),
         "latitude": latitude,
         "longitude": longitude,
     }
@@ -207,6 +258,8 @@ def get_weather_data(
     longitude: Number,
     session: requests.Session,
     timeout_seconds: Number,
+    temperature_unit: str,
+    wind_speed_unit: str,
 ) -> dict[str, Any]:
     url = "https://api.open-meteo.com/v1/forecast"
     weather_params = {
@@ -215,6 +268,8 @@ def get_weather_data(
         "current": ",".join(CURRENT_WEATHER_FIELDS),
         "daily": ",".join(DAILY_WEATHER_FIELDS),
         "forecast_days": 7,
+        "temperature_unit": temperature_unit,
+        "wind_speed_unit": wind_speed_unit,
         "timezone": "auto",
     }
 
@@ -392,6 +447,18 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--temperature-unit",
+        choices=("celsius", "fahrenheit"),
+        default="celsius",
+        help="Temperature unit for the weather report. Defaults to celsius.",
+    )
+    parser.add_argument(
+        "--wind-speed-unit",
+        choices=("kmh", "mph"),
+        default="kmh",
+        help="Wind speed unit for the weather report. Defaults to kmh.",
+    )
+    parser.add_argument(
         "city",
         nargs="*",
         help="City name to search for. If omitted, you will be prompted.",
@@ -410,6 +477,8 @@ def main(args: list[str] | None = None) -> int:
     parsed_args = parse_args(sys.argv[1:] if args is None else args)
     city = get_city_from_args(parsed_args)
     timeout_seconds = parsed_args.timeout
+    temperature_unit = parsed_args.temperature_unit
+    wind_speed_unit = parsed_args.wind_speed_unit
 
     if not city:
         print("City name cannot be empty.", file=sys.stderr)
@@ -431,6 +500,8 @@ def main(args: list[str] | None = None) -> int:
                     location["longitude"],
                     session,
                     timeout_seconds,
+                    temperature_unit,
+                    wind_speed_unit,
                 ),
                 WEATHER_ERROR_MESSAGES,
             )

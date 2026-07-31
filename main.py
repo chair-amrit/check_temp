@@ -170,6 +170,9 @@ def get_location(city: str, session: requests.Session) -> Location:
         raise LookupError("city not found")
 
     location = results[0]
+    if not isinstance(location, dict):
+        raise ValueError("location must be an object")
+
     require_fields(location, LOCATION_FIELDS, "location")
     latitude = require_number(location["latitude"], "location latitude")
     longitude = require_number(location["longitude"], "location longitude")
@@ -365,7 +368,7 @@ def main(args: list[str] | None = None) -> int:
     city = get_city_from_args(sys.argv[1:] if args is None else args)
 
     if not city:
-        print("City name cannot be empty.")
+        print("City name cannot be empty.", file=sys.stderr)
         return 1
 
     session = requests.Session()
@@ -382,13 +385,13 @@ def main(args: list[str] | None = None) -> int:
         )
         report = build_weather_report(location, weather_data)
     except LookupError:
-        print("City not found. Please try another city name.")
+        print("City not found. Please try another city name.", file=sys.stderr)
         return 1
     except AppError as error:
-        print(error.message)
+        print(error.message, file=sys.stderr)
         return 1
     except (TypeError, ValueError):
-        print(WEATHER_ERROR_MESSAGES.malformed)
+        print(WEATHER_ERROR_MESSAGES.malformed, file=sys.stderr)
         return 1
 
     print_weather_report(report)

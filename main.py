@@ -166,6 +166,9 @@ def get_location(city: str, session: requests.Session) -> Location:
     location_data = fetch_json(session, geocoding_url, geocoding_params)
 
     results = location_data.get("results", [])
+    if not isinstance(results, list):
+        raise ValueError("location results must be a list")
+
     if not results:
         raise LookupError("city not found")
 
@@ -371,18 +374,17 @@ def main(args: list[str] | None = None) -> int:
         print("City name cannot be empty.", file=sys.stderr)
         return 1
 
-    session = requests.Session()
-
     try:
-        location = run_service_call(
-            lambda: get_location(city, session), LOCATION_ERROR_MESSAGES
-        )
-        weather_data = run_service_call(
-            lambda: get_weather_data(
-                location["latitude"], location["longitude"], session
-            ),
-            WEATHER_ERROR_MESSAGES,
-        )
+        with requests.Session() as session:
+            location = run_service_call(
+                lambda: get_location(city, session), LOCATION_ERROR_MESSAGES
+            )
+            weather_data = run_service_call(
+                lambda: get_weather_data(
+                    location["latitude"], location["longitude"], session
+                ),
+                WEATHER_ERROR_MESSAGES,
+            )
         report = build_weather_report(location, weather_data)
     except LookupError:
         print("City not found. Please try another city name.", file=sys.stderr)

@@ -9,7 +9,7 @@ import requests
 
 Number = int | float
 T = TypeVar("T")
-REQUEST_TIMEOUT_SECONDS = 10
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 10
 
 LOCATION_FIELDS = ("name", "country", "latitude", "longitude")
 CURRENT_WEATHER_FIELDS = (
@@ -110,6 +110,13 @@ def require_number(value: Any, source: str) -> Number:
     return value
 
 
+def require_string(value: Any, source: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{source} must be a string")
+
+    return value
+
+
 def require_number_list(value: Any, source: str) -> list[Number]:
     if not isinstance(value, list):
         raise ValueError(f"{source} must be a list")
@@ -128,9 +135,12 @@ def require_string_list(value: Any, source: str) -> list[str]:
 
 
 def fetch_json(
-    session: requests.Session, url: str, params: dict[str, Any]
+    session: requests.Session,
+    url: str,
+    params: dict[str, Any],
+    timeout_seconds: Number,
 ) -> dict[str, Any]:
-    response = session.get(url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
+    response = session.get(url, params=params, timeout=timeout_seconds)
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict):
@@ -154,7 +164,9 @@ def run_service_call(call: Callable[[], T], messages: ServiceErrorMessages) -> T
         raise AppError(messages.malformed) from error
 
 
-def get_location(city: str, session: requests.Session) -> Location:
+def get_location(
+    city: str, session: requests.Session, timeout_seconds: Number
+) -> Location:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
         "name": city,
@@ -163,7 +175,9 @@ def get_location(city: str, session: requests.Session) -> Location:
         "format": "json",
     }
 
-    location_data = fetch_json(session, geocoding_url, geocoding_params)
+    location_data = fetch_json(
+        session, geocoding_url, geocoding_params, timeout_seconds
+    )
 
     results = location_data.get("results", [])
     if not isinstance(results, list):
@@ -189,7 +203,10 @@ def get_location(city: str, session: requests.Session) -> Location:
 
 
 def get_weather_data(
-    latitude: Number, longitude: Number, session: requests.Session
+    latitude: Number,
+    longitude: Number,
+    session: requests.Session,
+    timeout_seconds: Number,
 ) -> dict[str, Any]:
     url = "https://api.open-meteo.com/v1/forecast"
     weather_params = {
@@ -201,7 +218,7 @@ def get_weather_data(
         "timezone": "auto",
     }
 
-    return fetch_json(session, url, weather_params)
+    return fetch_json(session, url, weather_params, timeout_seconds)
 
 
 def get_current_weather(data: dict[str, Any]) -> CurrentWeather:
@@ -222,15 +239,25 @@ def get_current_weather(data: dict[str, Any]) -> CurrentWeather:
 
     return {
         "temperature": require_number(current["temperature_2m"], "temperature"),
-        "temperature_unit": units["temperature_2m"],
+        "temperature_unit": require_string(
+            units["temperature_2m"], "temperature unit"
+        ),
         "feels_like": require_number(current["apparent_temperature"], "feels like"),
-        "feels_like_unit": units["apparent_temperature"],
+        "feels_like_unit": require_string(
+            units["apparent_temperature"], "feels like unit"
+        ),
         "humidity": require_number(current["relative_humidity_2m"], "humidity"),
-        "humidity_unit": units["relative_humidity_2m"],
+        "humidity_unit": require_string(
+            units["relative_humidity_2m"], "humidity unit"
+        ),
         "precipitation": require_number(current["precipitation"], "precipitation"),
-        "precipitation_unit": units["precipitation"],
+        "precipitation_unit": require_string(
+            units["precipitation"], "precipitation unit"
+        ),
         "wind_speed": require_number(current["wind_speed_10m"], "wind speed"),
-        "wind_speed_unit": units["wind_speed_10m"],
+        "wind_speed_unit": require_string(
+            units["wind_speed_10m"], "wind speed unit"
+        ),
     }
 
 
@@ -258,8 +285,12 @@ def get_forecast(data: dict[str, Any]) -> Forecast:
         "min_temperatures": require_number_list(
             daily["temperature_2m_min"], "forecast minimum temperatures"
         ),
-        "max_temperature_unit": daily_units["temperature_2m_max"],
-        "min_temperature_unit": daily_units["temperature_2m_min"],
+        "max_temperature_unit": require_string(
+            daily_units["temperature_2m_max"], "forecast maximum temperature unit"
+        ),
+        "min_temperature_unit": require_string(
+            daily_units["temperature_2m_min"], "forecast minimum temperature unit"
+        ),
     }
 
     if (
@@ -352,6 +383,15 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         description="Fetch and print a weather report for a city."
     )
     parser.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        help=(
+            "Request timeout in seconds. "
+            f"Defaults to {DEFAULT_REQUEST_TIMEOUT_SECONDS}."
+        ),
+    )
+    parser.add_argument(
         "city",
         nargs="*",
         help="City name to search for. If omitted, you will be prompted.",
@@ -359,8 +399,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def get_city_from_args(args: list[str]) -> str:
-    parsed_args = parse_args(args)
+def get_city_from_args(parsed_args: argparse.Namespace) -> str:
     if parsed_args.city:
         return " ".join(parsed_args.city).strip()
 
@@ -368,20 +407,30 @@ def get_city_from_args(args: list[str]) -> str:
 
 
 def main(args: list[str] | None = None) -> int:
-    city = get_city_from_args(sys.argv[1:] if args is None else args)
+    parsed_args = parse_args(sys.argv[1:] if args is None else args)
+    city = get_city_from_args(parsed_args)
+    timeout_seconds = parsed_args.timeout
 
     if not city:
         print("City name cannot be empty.", file=sys.stderr)
         return 1
 
+    if timeout_seconds <= 0:
+        print("Timeout must be greater than 0.", file=sys.stderr)
+        return 1
+
     try:
         with requests.Session() as session:
             location = run_service_call(
-                lambda: get_location(city, session), LOCATION_ERROR_MESSAGES
+                lambda: get_location(city, session, timeout_seconds),
+                LOCATION_ERROR_MESSAGES,
             )
             weather_data = run_service_call(
                 lambda: get_weather_data(
-                    location["latitude"], location["longitude"], session
+                    location["latitude"],
+                    location["longitude"],
+                    session,
+                    timeout_seconds,
                 ),
                 WEATHER_ERROR_MESSAGES,
             )

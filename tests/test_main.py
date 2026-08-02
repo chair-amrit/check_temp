@@ -1,6 +1,7 @@
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from unittest.mock import patch
 
 import requests
 
@@ -8,10 +9,13 @@ import main as weather
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, error=None):
         self.payload = payload
+        self.error = error
 
     def raise_for_status(self):
+        if self.error is not None:
+            raise self.error
         return None
 
     def json(self):
@@ -21,9 +25,39 @@ class FakeResponse:
 class FakeSession:
     def __init__(self, payload):
         self.payload = payload
+        self.requests = []
 
     def get(self, *args, **kwargs):
+        self.requests.append((args, kwargs))
         return FakeResponse(self.payload)
+
+
+class FakeMainSession:
+    def __init__(self, payloads):
+        self.payloads = list(payloads)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def get(self, *args, **kwargs):
+        return FakeResponse(self.payloads.pop(0))
+
+
+class FailingMainSession:
+    def __init__(self, error):
+        self.error = error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def get(self, *args, **kwargs):
+        raise self.error
 
 
 class FakeHttpResponse:
@@ -74,6 +108,22 @@ class WeatherParsingTests(unittest.TestCase):
                 "time": ["2026-07-27", "2026-07-28"],
                 "temperature_2m_min": [24],
                 "temperature_2m_max": [31, 32, 33],
+            },
+            "daily_units": {
+                "temperature_2m_min": "deg C",
+                "temperature_2m_max": "deg C",
+            },
+        }
+
+        with self.assertRaises(ValueError):
+            weather.get_forecast(data)
+
+    def test_forecast_expected_day_count_validation(self):
+        data = {
+            "daily": {
+                "time": ["2026-07-27"],
+                "temperature_2m_min": [24],
+                "temperature_2m_max": [31],
             },
             "daily_units": {
                 "temperature_2m_min": "deg C",
@@ -183,6 +233,43 @@ class WeatherParsingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             weather.get_current_weather(data)
 
+    def test_current_weather_rejects_null_values(self):
+        data = {
+            "current": {
+                "temperature_2m": None,
+                "apparent_temperature": 29.1,
+                "relative_humidity_2m": 72,
+                "precipitation": 0,
+                "wind_speed_10m": 8.5,
+            },
+            "current_units": {
+                "temperature_2m": "deg C",
+                "apparent_temperature": "deg C",
+                "relative_humidity_2m": "%",
+                "precipitation": "mm",
+                "wind_speed_10m": "km/h",
+            },
+        }
+
+        with self.assertRaises(ValueError):
+            weather.get_current_weather(data)
+
+    def test_forecast_rejects_null_values(self):
+        data = {
+            "daily": {
+                "time": [f"2026-07-{day}" for day in range(27, 34)],
+                "temperature_2m_min": [24, None, 24, 23, 24, 25, 26],
+                "temperature_2m_max": [31, 32, 31, 30, 31, 32, 33],
+            },
+            "daily_units": {
+                "temperature_2m_min": "deg C",
+                "temperature_2m_max": "deg C",
+            },
+        }
+
+        with self.assertRaises(ValueError):
+            weather.get_forecast(data)
+
     def test_json_report_output(self):
         report = weather.WeatherReport(
             location=weather.Location(
@@ -234,6 +321,157 @@ class WeatherParsingTests(unittest.TestCase):
         self.assertEqual(
             message, "Weather API rate limit reached. Please try again later."
         )
+
+    def test_main_rejects_empty_city(self):
+        stderr = StringIO()
+
+        with redirect_stderr(stderr):
+            exit_code = weather.main([""])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("City name cannot be empty.", stderr.getvalue())
+
+    def test_parse_args_rejects_invalid_timeout(self):
+        with redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                weather.parse_args(["--timeout", "0", "Chennai"])
+
+    def test_run_service_call_maps_timeout(self):
+        with self.assertRaises(weather.AppError) as context:
+            weather.run_service_call(
+                lambda: (_ for _ in ()).throw(requests.exceptions.Timeout()),
+                weather.WEATHER_ERROR_MESSAGES,
+            )
+
+        self.assertEqual(
+            context.exception.message, "Weather request timed out. Please try again."
+        )
+
+    def test_run_service_call_maps_connection_error(self):
+        with self.assertRaises(weather.AppError) as context:
+            weather.run_service_call(
+                lambda: (_ for _ in ()).throw(requests.exceptions.ConnectionError()),
+                weather.LOCATION_ERROR_MESSAGES,
+            )
+
+        self.assertEqual(
+            context.exception.message,
+            "Could not connect to the location service. Please check your internet connection.",
+        )
+
+    def test_run_service_call_maps_http_server_error(self):
+        error = requests.exceptions.HTTPError(
+            response=FakeHttpResponse(status_code=503)
+        )
+
+        with self.assertRaises(weather.AppError) as context:
+            weather.run_service_call(
+                lambda: (_ for _ in ()).throw(error),
+                weather.WEATHER_ERROR_MESSAGES,
+            )
+
+        self.assertEqual(
+            context.exception.message,
+            "Weather API is having trouble. Please try again later.",
+        )
+
+    def test_main_uses_multiple_location_selection(self):
+        weather_payload = {
+            "current": {
+                "temperature_2m": 27.4,
+                "apparent_temperature": 29.1,
+                "relative_humidity_2m": 72,
+                "precipitation": 0,
+                "wind_speed_10m": 8.5,
+            },
+            "current_units": {
+                "temperature_2m": "deg C",
+                "apparent_temperature": "deg C",
+                "relative_humidity_2m": "%",
+                "precipitation": "mm",
+                "wind_speed_10m": "km/h",
+            },
+            "daily": {
+                "time": [f"2026-07-{day}" for day in range(27, 34)],
+                "temperature_2m_min": [24, 25, 24, 23, 24, 25, 26],
+                "temperature_2m_max": [31, 32, 31, 30, 31, 32, 33],
+            },
+            "daily_units": {
+                "temperature_2m_min": "deg C",
+                "temperature_2m_max": "deg C",
+            },
+        }
+        session = FakeMainSession(
+            [
+                {
+                    "results": [
+                        {
+                            "name": "Springfield",
+                            "country": "United States",
+                            "latitude": 39.7817,
+                            "longitude": -89.6501,
+                            "admin1": "Illinois",
+                        },
+                        {
+                            "name": "Springfield",
+                            "country": "United States",
+                            "latitude": 44.0462,
+                            "longitude": -123.022,
+                            "admin1": "Oregon",
+                        },
+                    ]
+                },
+                weather_payload,
+            ]
+        )
+        stdout = StringIO()
+
+        with patch("main.requests.Session", return_value=session):
+            with redirect_stdout(stdout):
+                exit_code = weather.main(
+                    ["--location-index", "2", "--json", "Springfield"]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"admin1": "Oregon"', stdout.getvalue())
+        self.assertIn('"latitude": 44.0462', stdout.getvalue())
+
+    def test_main_prints_weather_report(self):
+        report = weather.WeatherReport(
+            location=weather.Location(
+                name="Chennai",
+                country="India",
+                latitude=13.0878,
+                longitude=80.2785,
+            ),
+            current_weather=weather.CurrentWeather(
+                temperature=32.1,
+                temperature_unit="deg C",
+                feels_like=35.7,
+                feels_like_unit="deg C",
+                humidity=58,
+                humidity_unit="%",
+                precipitation=0,
+                precipitation_unit="mm",
+                wind_speed=12.1,
+                wind_speed_unit="km/h",
+            ),
+            forecast=weather.Forecast(
+                dates=[f"2026-07-{day}" for day in range(27, 34)],
+                min_temperatures=[30, 29, 28, 28, 29, 30, 31],
+                max_temperatures=[38, 37, 37, 36, 36, 37, 38],
+                min_temperature_unit="deg C",
+                max_temperature_unit="deg C",
+            ),
+        )
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            weather.print_weather_report(report)
+
+        self.assertIn("Weather Report", stdout.getvalue())
+        self.assertIn("Chennai, India", stdout.getvalue())
+        self.assertIn("7-Day Forecast", stdout.getvalue())
 
 
 if __name__ == "__main__":

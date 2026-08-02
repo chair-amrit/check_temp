@@ -12,6 +12,7 @@ Number = int | float
 T = TypeVar("T")
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 10
 GEOCODING_RESULT_COUNT = 5
+FORECAST_DAYS = 7
 
 LOCATION_FIELDS = ("name", "country", "latitude", "longitude")
 CURRENT_WEATHER_FIELDS = (
@@ -223,6 +224,25 @@ def require_string_list(value: Any, source: str) -> list[str]:
     return value
 
 
+def validate_forecast_lists(forecast: Forecast) -> None:
+    if (
+        not forecast.dates
+        or not forecast.max_temperatures
+        or not forecast.min_temperatures
+    ):
+        raise ValueError("missing forecast information")
+
+    if not (
+        len(forecast.dates)
+        == len(forecast.max_temperatures)
+        == len(forecast.min_temperatures)
+    ):
+        raise ValueError("forecast arrays must have matching lengths")
+
+    if len(forecast.dates) != FORECAST_DAYS:
+        raise ValueError(f"forecast must include {FORECAST_DAYS} days")
+
+
 def fetch_json(
     session: requests.Session,
     url: str,
@@ -346,7 +366,7 @@ def get_weather_data(
         "longitude": longitude,
         "current": ",".join(CURRENT_WEATHER_FIELDS),
         "daily": ",".join(DAILY_WEATHER_FIELDS),
-        "forecast_days": 7,
+        "forecast_days": FORECAST_DAYS,
         "temperature_unit": temperature_unit,
         "wind_speed_unit": wind_speed_unit,
         "timezone": "auto",
@@ -451,19 +471,7 @@ def get_forecast(data: dict[str, Any]) -> Forecast:
         ),
     )
 
-    if (
-        not forecast.dates
-        or not forecast.max_temperatures
-        or not forecast.min_temperatures
-    ):
-        raise ValueError("missing forecast information")
-
-    if not (
-        len(forecast.dates)
-        == len(forecast.max_temperatures)
-        == len(forecast.min_temperatures)
-    ):
-        raise ValueError("forecast arrays must have matching lengths")
+    validate_forecast_lists(forecast)
 
     return forecast
 

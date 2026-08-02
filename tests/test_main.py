@@ -53,11 +53,11 @@ class WeatherParsingTests(unittest.TestCase):
 
         current_weather = weather.get_current_weather(data)
 
-        self.assertEqual(current_weather["temperature"], 27.4)
-        self.assertEqual(current_weather["temperature_unit"], "deg C")
-        self.assertEqual(current_weather["feels_like"], 29.1)
-        self.assertEqual(current_weather["humidity"], 72)
-        self.assertEqual(current_weather["wind_speed"], 8.5)
+        self.assertEqual(current_weather.temperature, 27.4)
+        self.assertEqual(current_weather.temperature_unit, "deg C")
+        self.assertEqual(current_weather.feels_like, 29.1)
+        self.assertEqual(current_weather.humidity, 72)
+        self.assertEqual(current_weather.wind_speed, 8.5)
 
     def test_forecast_length_validation(self):
         data = {
@@ -114,8 +114,31 @@ class WeatherParsingTests(unittest.TestCase):
 
         location = weather.get_location("Springfield", session, location_index=2)
 
-        self.assertEqual(location["latitude"], 44.0462)
-        self.assertEqual(location["longitude"], -123.022)
+        self.assertEqual(location.latitude, 44.0462)
+        self.assertEqual(location.longitude, -123.022)
+
+    def test_get_location_preserves_extra_location_details(self):
+        session = FakeSession(
+            {
+                "results": [
+                    {
+                        "name": "Paris",
+                        "country": "United States",
+                        "latitude": 33.6609,
+                        "longitude": -95.5555,
+                        "admin1": "Texas",
+                        "country_code": "US",
+                        "timezone": "America/Chicago",
+                    }
+                ]
+            }
+        )
+
+        location = weather.get_location("Paris", session)
+
+        self.assertEqual(location.admin1, "Texas")
+        self.assertEqual(location.country_code, "US")
+        self.assertEqual(location.timezone, "America/Chicago")
 
     def test_choose_location_rejects_out_of_range_index(self):
         locations = [

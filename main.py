@@ -2,7 +2,7 @@ import argparse
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Sequence, TypeVar, TypedDict
+from typing import Any, Sequence, TypeVar
 
 import requests
 
@@ -24,14 +24,19 @@ DAILY_FORECAST_FIELDS = ("time", "temperature_2m_max", "temperature_2m_min")
 DAILY_WEATHER_FIELDS = ("temperature_2m_max", "temperature_2m_min")
 
 
-class Location(TypedDict):
+@dataclass(frozen=True)
+class Location:
     name: str
     country: str
     latitude: Number
     longitude: Number
+    admin1: str | None = None
+    country_code: str | None = None
+    timezone: str | None = None
 
 
-class CurrentWeather(TypedDict):
+@dataclass(frozen=True)
+class CurrentWeather:
     temperature: Number
     temperature_unit: str
     feels_like: Number
@@ -44,7 +49,8 @@ class CurrentWeather(TypedDict):
     wind_speed_unit: str
 
 
-class Forecast(TypedDict):
+@dataclass(frozen=True)
+class Forecast:
     dates: list[str]
     max_temperatures: list[Number]
     min_temperatures: list[Number]
@@ -52,7 +58,8 @@ class Forecast(TypedDict):
     min_temperature_unit: str
 
 
-class WeatherReport(TypedDict):
+@dataclass(frozen=True)
+class WeatherReport:
     location: Location
     current_weather: CurrentWeather
     forecast: Forecast
@@ -116,6 +123,13 @@ def require_string(value: Any, source: str) -> str:
         raise ValueError(f"{source} must be a string")
 
     return value
+
+
+def optional_string(value: Any, source: str) -> str | None:
+    if value is None:
+        return None
+
+    return require_string(value, source)
 
 
 def format_location_choice(location: dict[str, Any]) -> str:
@@ -279,12 +293,17 @@ def build_location(location: dict[str, Any]) -> Location:
     latitude = require_number(location["latitude"], "location latitude")
     longitude = require_number(location["longitude"], "location longitude")
 
-    return {
-        "name": require_string(location["name"], "location name"),
-        "country": require_string(location["country"], "location country"),
-        "latitude": latitude,
-        "longitude": longitude,
-    }
+    return Location(
+        name=require_string(location["name"], "location name"),
+        country=require_string(location["country"], "location country"),
+        latitude=latitude,
+        longitude=longitude,
+        admin1=optional_string(location.get("admin1"), "location admin1"),
+        country_code=optional_string(
+            location.get("country_code"), "location country code"
+        ),
+        timezone=optional_string(location.get("timezone"), "location timezone"),
+    )
 
 
 def get_weather_data(
@@ -350,28 +369,28 @@ def get_current_weather(data: dict[str, Any]) -> CurrentWeather:
         "current weather units",
     )
 
-    return {
-        "temperature": require_number(current["temperature_2m"], "temperature"),
-        "temperature_unit": require_string(
+    return CurrentWeather(
+        temperature=require_number(current["temperature_2m"], "temperature"),
+        temperature_unit=require_string(
             units["temperature_2m"], "temperature unit"
         ),
-        "feels_like": require_number(current["apparent_temperature"], "feels like"),
-        "feels_like_unit": require_string(
+        feels_like=require_number(current["apparent_temperature"], "feels like"),
+        feels_like_unit=require_string(
             units["apparent_temperature"], "feels like unit"
         ),
-        "humidity": require_number(current["relative_humidity_2m"], "humidity"),
-        "humidity_unit": require_string(
+        humidity=require_number(current["relative_humidity_2m"], "humidity"),
+        humidity_unit=require_string(
             units["relative_humidity_2m"], "humidity unit"
         ),
-        "precipitation": require_number(current["precipitation"], "precipitation"),
-        "precipitation_unit": require_string(
+        precipitation=require_number(current["precipitation"], "precipitation"),
+        precipitation_unit=require_string(
             units["precipitation"], "precipitation unit"
         ),
-        "wind_speed": require_number(current["wind_speed_10m"], "wind speed"),
-        "wind_speed_unit": require_string(
+        wind_speed=require_number(current["wind_speed_10m"], "wind speed"),
+        wind_speed_unit=require_string(
             units["wind_speed_10m"], "wind speed unit"
         ),
-    }
+    )
 
 
 def get_forecast(data: dict[str, Any]) -> Forecast:
@@ -390,33 +409,33 @@ def get_forecast(data: dict[str, Any]) -> Forecast:
         "daily forecast units",
     )
 
-    forecast: Forecast = {
-        "dates": require_string_list(daily["time"], "forecast dates"),
-        "max_temperatures": require_number_list(
+    forecast = Forecast(
+        dates=require_string_list(daily["time"], "forecast dates"),
+        max_temperatures=require_number_list(
             daily["temperature_2m_max"], "forecast maximum temperatures"
         ),
-        "min_temperatures": require_number_list(
+        min_temperatures=require_number_list(
             daily["temperature_2m_min"], "forecast minimum temperatures"
         ),
-        "max_temperature_unit": require_string(
+        max_temperature_unit=require_string(
             daily_units["temperature_2m_max"], "forecast maximum temperature unit"
         ),
-        "min_temperature_unit": require_string(
+        min_temperature_unit=require_string(
             daily_units["temperature_2m_min"], "forecast minimum temperature unit"
         ),
-    }
+    )
 
     if (
-        not forecast["dates"]
-        or not forecast["max_temperatures"]
-        or not forecast["min_temperatures"]
+        not forecast.dates
+        or not forecast.max_temperatures
+        or not forecast.min_temperatures
     ):
         raise ValueError("missing forecast information")
 
     if not (
-        len(forecast["dates"])
-        == len(forecast["max_temperatures"])
-        == len(forecast["min_temperatures"])
+        len(forecast.dates)
+        == len(forecast.max_temperatures)
+        == len(forecast.min_temperatures)
     ):
         raise ValueError("forecast arrays must have matching lengths")
 
@@ -426,11 +445,11 @@ def get_forecast(data: dict[str, Any]) -> Forecast:
 def build_weather_report(
     location: Location, weather_data: dict[str, Any]
 ) -> WeatherReport:
-    return {
-        "location": location,
-        "current_weather": get_current_weather(weather_data),
-        "forecast": get_forecast(weather_data),
-    }
+    return WeatherReport(
+        location=location,
+        current_weather=get_current_weather(weather_data),
+        forecast=get_forecast(weather_data),
+    )
 
 
 def format_number(value: Any) -> str:
@@ -441,52 +460,62 @@ def format_number(value: Any) -> str:
 
 
 def print_weather_report(report: WeatherReport) -> None:
-    location = report["location"]
-    current_weather = report["current_weather"]
-    forecast = report["forecast"]
+    location = report.location
+    current_weather = report.current_weather
+    forecast = report.forecast
 
     print("\nWeather Report")
     print("=" * 40)
-    print(f"Location      : {location['name']}, {location['country']}")
-    print(f"Coordinates   : {location['latitude']}, {location['longitude']}")
+    location_parts = [location.name]
+    if location.admin1 and location.admin1 not in location_parts:
+        location_parts.append(location.admin1)
+    if location.country not in location_parts:
+        location_parts.append(location.country)
+
+    print(f"Location      : {', '.join(location_parts)}")
+    if location.country_code:
+        print(f"Country code  : {location.country_code}")
+    if location.timezone:
+        print(f"Timezone      : {location.timezone}")
+    print(f"Coordinates   : {location.latitude}, {location.longitude}")
     print("-" * 40)
     print(
-        f"Temperature   : {format_number(current_weather['temperature'])} "
-        f"{current_weather['temperature_unit']}"
+        f"Temperature   : {format_number(current_weather.temperature)} "
+        f"{current_weather.temperature_unit}"
     )
     print(
-        f"Feels like    : {format_number(current_weather['feels_like'])} "
-        f"{current_weather['feels_like_unit']}"
+        f"Feels like    : {format_number(current_weather.feels_like)} "
+        f"{current_weather.feels_like_unit}"
     )
     print(
-        f"Wind          : {format_number(current_weather['wind_speed'])} "
-        f"{current_weather['wind_speed_unit']}"
+        f"Wind          : {format_number(current_weather.wind_speed)} "
+        f"{current_weather.wind_speed_unit}"
     )
-    print(f"Humidity      : {current_weather['humidity']}{current_weather['humidity_unit']}")
+    print(f"Humidity      : {current_weather.humidity}{current_weather.humidity_unit}")
     print(
-        f"Precipitation : {format_number(current_weather['precipitation'])} "
-        f"{current_weather['precipitation_unit']}"
+        f"Precipitation : {format_number(current_weather.precipitation)} "
+        f"{current_weather.precipitation_unit}"
     )
     print("-" * 40)
     print(
-        f"Today         : {format_number(forecast['min_temperatures'][0])} "
-        f"{forecast['min_temperature_unit']} - "
-        f"{format_number(forecast['max_temperatures'][0])} "
-        f"{forecast['max_temperature_unit']}"
+        f"Today         : {format_number(forecast.min_temperatures[0])} "
+        f"{forecast.min_temperature_unit} - "
+        f"{format_number(forecast.max_temperatures[0])} "
+        f"{forecast.max_temperature_unit}"
     )
 
     print("\n7-Day Forecast")
     print("-" * 40)
     print(f"{'Date':<12} {'Low':>10} {'High':>10}")
     print("-" * 40)
-    for index, date in enumerate(forecast["dates"]):
+    for index, date in enumerate(forecast.dates):
         low = (
-            f"{format_number(forecast['min_temperatures'][index])} "
-            f"{forecast['min_temperature_unit']}"
+            f"{format_number(forecast.min_temperatures[index])} "
+            f"{forecast.min_temperature_unit}"
         )
         high = (
-            f"{format_number(forecast['max_temperatures'][index])} "
-            f"{forecast['max_temperature_unit']}"
+            f"{format_number(forecast.max_temperatures[index])} "
+            f"{forecast.max_temperature_unit}"
         )
         print(f"{date:<12} {low:>10} {high:>10}")
 
@@ -566,8 +595,8 @@ def main(args: list[str] | None = None) -> int:
             location = build_location(choose_location(locations, selected_index))
             weather_data = run_service_call(
                 lambda: get_weather_data(
-                    location["latitude"],
-                    location["longitude"],
+                    location.latitude,
+                    location.longitude,
                     session,
                     timeout_seconds,
                     temperature_unit,

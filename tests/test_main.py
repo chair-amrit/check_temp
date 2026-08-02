@@ -92,6 +92,44 @@ class WeatherParsingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             weather.get_location("Bad City", session)
 
+    def test_get_location_uses_selected_location_index(self):
+        session = FakeSession(
+            {
+                "results": [
+                    {
+                        "name": "Springfield",
+                        "country": "United States",
+                        "latitude": 39.7817,
+                        "longitude": -89.6501,
+                    },
+                    {
+                        "name": "Springfield",
+                        "country": "United States",
+                        "latitude": 44.0462,
+                        "longitude": -123.022,
+                    },
+                ]
+            }
+        )
+
+        location = weather.get_location("Springfield", session, location_index=2)
+
+        self.assertEqual(location["latitude"], 44.0462)
+        self.assertEqual(location["longitude"], -123.022)
+
+    def test_choose_location_rejects_out_of_range_index(self):
+        locations = [
+            {
+                "name": "Only City",
+                "country": "Nowhere",
+                "latitude": 1,
+                "longitude": 2,
+            }
+        ]
+
+        with self.assertRaises(ValueError):
+            weather.choose_location(locations, 2)
+
     def test_current_weather_type_validation(self):
         data = {
             "current": {

@@ -133,7 +133,7 @@ def format_location_choice(location: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
-def choose_location(results: list[Any]) -> dict[str, Any]:
+def get_location_candidates(results: list[Any]) -> list[dict[str, Any]]:
     locations: list[dict[str, Any]] = []
 
     for index, result in enumerate(results, start=1):
@@ -143,9 +143,19 @@ def choose_location(results: list[Any]) -> dict[str, Any]:
         require_fields(result, LOCATION_FIELDS, f"location {index}")
         locations.append(result)
 
-    if len(locations) == 1:
-        return locations[0]
+    return locations
 
+
+def choose_location(
+    locations: list[dict[str, Any]], location_index: int = 1
+) -> dict[str, Any]:
+    if not 1 <= location_index <= len(locations):
+        raise ValueError("location index must match one of the listed locations")
+
+    return locations[location_index - 1]
+
+
+def prompt_for_location_index(locations: list[dict[str, Any]]) -> int:
     print("Multiple matching cities found:", file=sys.stderr)
     for index, location in enumerate(locations, start=1):
         print(f"{index}. {format_location_choice(location)}", file=sys.stderr)
@@ -155,10 +165,10 @@ def choose_location(results: list[Any]) -> dict[str, Any]:
         try:
             choice = input().strip()
         except EOFError:
-            return locations[0]
+            return 1
 
         if not choice:
-            return locations[0]
+            return 1
 
         try:
             selected_index = int(choice)
@@ -167,7 +177,7 @@ def choose_location(results: list[Any]) -> dict[str, Any]:
             continue
 
         if 1 <= selected_index <= len(locations):
-            return locations[selected_index - 1]
+            return selected_index
 
         print("Please choose one of the listed locations.", file=sys.stderr)
 
@@ -223,7 +233,17 @@ def get_location(
     city: str,
     session: requests.Session,
     timeout_seconds: Number = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    location_index: int = 1,
 ) -> Location:
+    locations = get_locations(city, session, timeout_seconds)
+    return build_location(choose_location(locations, location_index))
+
+
+def get_location_data(
+    city: str,
+    session: requests.Session,
+    timeout_seconds: Number,
+) -> dict[str, Any]:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
         "name": city,
@@ -235,6 +255,15 @@ def get_location(
     location_data = fetch_json(
         session, geocoding_url, geocoding_params, timeout_seconds
     )
+    return location_data
+
+
+def get_locations(
+    city: str,
+    session: requests.Session,
+    timeout_seconds: Number,
+) -> list[dict[str, Any]]:
+    location_data = get_location_data(city, session, timeout_seconds)
 
     results = location_data.get("results", [])
     if not isinstance(results, list):
@@ -243,7 +272,10 @@ def get_location(
     if not results:
         raise LookupError("city not found")
 
-    location = choose_location(results)
+    return get_location_candidates(results)
+
+
+def build_location(location: dict[str, Any]) -> Location:
     latitude = require_number(location["latitude"], "location latitude")
     longitude = require_number(location["longitude"], "location longitude")
 
@@ -283,6 +315,18 @@ def positive_float(value: str) -> float:
         parsed_value = float(value)
     except ValueError as error:
         raise argparse.ArgumentTypeError("must be a number") from error
+
+    if parsed_value <= 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+
+    return parsed_value
+
+
+def positive_int(value: str) -> int:
+    try:
+        parsed_value = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer") from error
 
     if parsed_value <= 0:
         raise argparse.ArgumentTypeError("must be greater than 0")
@@ -473,6 +517,14 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Wind speed unit for the weather report. Defaults to kmh.",
     )
     parser.add_argument(
+        "--location-index",
+        type=positive_int,
+        help=(
+            "Select a 1-based location result without prompting. "
+            "Defaults to an interactive prompt when multiple matches exist."
+        ),
+    )
+    parser.add_argument(
         "city",
         nargs="*",
         help="City name to search for. If omitted, you will be prompted.",
@@ -493,6 +545,7 @@ def main(args: list[str] | None = None) -> int:
     timeout_seconds = parsed_args.timeout
     temperature_unit = parsed_args.temperature_unit
     wind_speed_unit = parsed_args.wind_speed_unit
+    location_index = parsed_args.location_index
 
     if not city:
         print("City name cannot be empty.", file=sys.stderr)
@@ -500,10 +553,17 @@ def main(args: list[str] | None = None) -> int:
 
     try:
         with requests.Session() as session:
-            location = run_service_call(
-                lambda: get_location(city, session, timeout_seconds),
+            locations = run_service_call(
+                lambda: get_locations(city, session, timeout_seconds),
                 LOCATION_ERROR_MESSAGES,
             )
+            selected_index = location_index
+            if selected_index is None:
+                selected_index = (
+                    prompt_for_location_index(locations) if len(locations) > 1 else 1
+                )
+
+            location = build_location(choose_location(locations, selected_index))
             weather_data = run_service_call(
                 lambda: get_weather_data(
                     location["latitude"],

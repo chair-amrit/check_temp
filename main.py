@@ -1,7 +1,8 @@
 import argparse
+import json
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Sequence, TypeVar
 
 import requests
@@ -70,6 +71,9 @@ class ServiceErrorMessages:
     timeout: str
     connection: str
     http: str
+    bad_request: str
+    rate_limited: str
+    server: str
     request: str
     malformed: str
 
@@ -87,6 +91,9 @@ LOCATION_ERROR_MESSAGES = ServiceErrorMessages(
         "Please check your internet connection."
     ),
     http="Location service is unavailable. Please try again later.",
+    bad_request="Location request was rejected. Please check the city name.",
+    rate_limited="Location service rate limit reached. Please try again later.",
+    server="Location service is having trouble. Please try again later.",
     request="Location request failed. Please try again.",
     malformed="Location service returned malformed data.",
 )
@@ -97,6 +104,9 @@ WEATHER_ERROR_MESSAGES = ServiceErrorMessages(
         "Please check your internet connection."
     ),
     http="Weather API is unavailable. Please try again later.",
+    bad_request="Weather request was rejected. Please try again.",
+    rate_limited="Weather API rate limit reached. Please try again later.",
+    server="Weather API is having trouble. Please try again later.",
     request="Weather request failed. Please try again.",
     malformed="Weather API returned malformed data.",
 )
@@ -228,6 +238,22 @@ def fetch_json(
     return payload
 
 
+def get_http_error_message(
+    error: requests.exceptions.HTTPError, messages: ServiceErrorMessages
+) -> str:
+    response = error.response
+    status_code = response.status_code if response is not None else None
+
+    if status_code == 400:
+        return messages.bad_request
+    if status_code == 429:
+        return messages.rate_limited
+    if status_code is not None and 500 <= status_code <= 599:
+        return messages.server
+
+    return messages.http
+
+
 def run_service_call(call: Callable[[], T], messages: ServiceErrorMessages) -> T:
     try:
         return call()
@@ -236,7 +262,7 @@ def run_service_call(call: Callable[[], T], messages: ServiceErrorMessages) -> T
     except requests.exceptions.ConnectionError as error:
         raise AppError(messages.connection) from error
     except requests.exceptions.HTTPError as error:
-        raise AppError(messages.http) from error
+        raise AppError(get_http_error_message(error, messages)) from error
     except requests.exceptions.RequestException as error:
         raise AppError(messages.request) from error
     except (TypeError, ValueError) as error:
@@ -520,6 +546,10 @@ def print_weather_report(report: WeatherReport) -> None:
         print(f"{date:<12} {low:>10} {high:>10}")
 
 
+def print_weather_report_json(report: WeatherReport) -> None:
+    print(json.dumps(asdict(report), indent=2))
+
+
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch and print a weather report for a city."
@@ -554,6 +584,11 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the weather report as JSON for scripts.",
+    )
+    parser.add_argument(
         "city",
         nargs="*",
         help="City name to search for. If omitted, you will be prompted.",
@@ -575,6 +610,7 @@ def main(args: list[str] | None = None) -> int:
     temperature_unit = parsed_args.temperature_unit
     wind_speed_unit = parsed_args.wind_speed_unit
     location_index = parsed_args.location_index
+    output_json = parsed_args.json
 
     if not city:
         print("City name cannot be empty.", file=sys.stderr)
@@ -615,7 +651,10 @@ def main(args: list[str] | None = None) -> int:
         print(WEATHER_ERROR_MESSAGES.malformed, file=sys.stderr)
         return 1
 
-    print_weather_report(report)
+    if output_json:
+        print_weather_report_json(report)
+    else:
+        print_weather_report(report)
     return 0
 
 

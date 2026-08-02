@@ -1,4 +1,8 @@
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
+
+import requests
 
 import main as weather
 
@@ -20,6 +24,11 @@ class FakeSession:
 
     def get(self, *args, **kwargs):
         return FakeResponse(self.payload)
+
+
+class FakeHttpResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
 
 
 class WeatherParsingTests(unittest.TestCase):
@@ -173,6 +182,58 @@ class WeatherParsingTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             weather.get_current_weather(data)
+
+    def test_json_report_output(self):
+        report = weather.WeatherReport(
+            location=weather.Location(
+                name="Paris",
+                country="United States",
+                latitude=33.6609,
+                longitude=-95.5555,
+                admin1="Texas",
+                country_code="US",
+                timezone="America/Chicago",
+            ),
+            current_weather=weather.CurrentWeather(
+                temperature=27.4,
+                temperature_unit="deg C",
+                feels_like=29.1,
+                feels_like_unit="deg C",
+                humidity=72,
+                humidity_unit="%",
+                precipitation=0,
+                precipitation_unit="mm",
+                wind_speed=8.5,
+                wind_speed_unit="km/h",
+            ),
+            forecast=weather.Forecast(
+                dates=["2026-07-27"],
+                max_temperatures=[31],
+                min_temperatures=[24],
+                max_temperature_unit="deg C",
+                min_temperature_unit="deg C",
+            ),
+        )
+        output = StringIO()
+
+        with redirect_stdout(output):
+            weather.print_weather_report_json(report)
+
+        self.assertIn('"admin1": "Texas"', output.getvalue())
+        self.assertIn('"temperature": 27.4', output.getvalue())
+
+    def test_http_error_message_uses_status_code(self):
+        error = requests.exceptions.HTTPError(
+            response=FakeHttpResponse(status_code=429)
+        )
+
+        message = weather.get_http_error_message(
+            error, weather.WEATHER_ERROR_MESSAGES
+        )
+
+        self.assertEqual(
+            message, "Weather API rate limit reached. Please try again later."
+        )
 
 
 if __name__ == "__main__":

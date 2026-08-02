@@ -220,7 +220,9 @@ def run_service_call(call: Callable[[], T], messages: ServiceErrorMessages) -> T
 
 
 def get_location(
-    city: str, session: requests.Session, timeout_seconds: Number
+    city: str,
+    session: requests.Session,
+    timeout_seconds: Number = DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> Location:
     geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
     geocoding_params = {
@@ -274,6 +276,18 @@ def get_weather_data(
     }
 
     return fetch_json(session, url, weather_params, timeout_seconds)
+
+
+def positive_float(value: str) -> float:
+    try:
+        parsed_value = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a number") from error
+
+    if parsed_value <= 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+
+    return parsed_value
 
 
 def get_current_weather(data: dict[str, Any]) -> CurrentWeather:
@@ -439,7 +453,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--timeout",
-        type=float,
+        type=positive_float,
         default=DEFAULT_REQUEST_TIMEOUT_SECONDS,
         help=(
             "Request timeout in seconds. "
@@ -482,10 +496,6 @@ def main(args: list[str] | None = None) -> int:
 
     if not city:
         print("City name cannot be empty.", file=sys.stderr)
-        return 1
-
-    if timeout_seconds <= 0:
-        print("Timeout must be greater than 0.", file=sys.stderr)
         return 1
 
     try:
